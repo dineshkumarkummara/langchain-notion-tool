@@ -6,6 +6,7 @@ agents and workflows. The package provides:
 - `NotionSearchTool` – locate databases and pages with normalized results ready for LLMs.
 - `NotionWriteTool` – create or update pages with rich block payloads, property updates, and
   dry-run previews.
+- `NotionToolkit` – convenience factory bundling both tools with shared retry-aware clients.
 - Block helper utilities, Markdown-to-Notion conversion, and a lightweight CLI for rapid
   debugging.
 

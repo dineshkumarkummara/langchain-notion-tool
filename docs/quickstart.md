@@ -59,7 +59,19 @@ print(result["create"]["summary"])
 The tools are standard LangChain runnables. Bind arguments for reuse or call them directly inside
 custom agents.
 
-## 4. Debug with the CLI
+## 4. Use the toolkit
+
+Prefer a bundled setup? The `NotionToolkit` factory wires both tools to the same underlying
+Notion clients, enabling shared retry policy and reduced connection overhead:
+
+```python
+from langchain_notion_tools import create_toolkit
+
+notion = create_toolkit()
+agent = RunnableParallel({"search": notion.search, "write": notion.write})
+```
+
+## 5. Debug with the CLI
 
 Two helper commands are installed automatically:
 

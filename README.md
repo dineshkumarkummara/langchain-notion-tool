@@ -77,6 +77,26 @@ Credentials are read from `NOTION_API_TOKEN` (and optionally `NOTION_DEFAULT_PAR
 
 ---
 
+## Toolkit helper
+
+When you need both tools side by side, use the `NotionToolkit` factory. It shares a single Notion client across the search and write tools so rate limits and retries are coordinated.
+
+```python
+from langchain_notion_tools import create_toolkit
+
+notion = create_toolkit()
+for tool in notion.tools:
+    print(tool.name)
+
+# Plug into an agent
+from langchain_core.runnables import RunnableParallel
+workflow = RunnableParallel({"search": notion.search, "write": notion.write})
+```
+
+Call `create_toolkit(api_token="...")` to override credentials or pass an existing `NotionClientSettings` instance.
+
+---
+
 ## CLI
 
 Debug workflows without writing a script:

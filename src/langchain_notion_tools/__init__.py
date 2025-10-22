@@ -48,6 +48,7 @@ from .tools import (
     NotionWriteResult,
     NotionWriteTool,
 )
+from .toolkit import NotionToolkit, create_toolkit
 
 __all__ = [
     "__version__",
@@ -87,6 +88,8 @@ __all__ = [
     "sanitize_blocks",
     "to_do",
     "toggle",
+    "NotionToolkit",
+    "create_toolkit",
 ]
 
 __version__ = "0.1.0"
