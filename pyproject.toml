@@ -49,9 +49,9 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/dinesh/langchain-notion-tools"
-Repository = "https://github.com/dinesh/langchain-notion-tools"
-"Bug Tracker" = "https://github.com/dinesh/langchain-notion-tools/issues"
+Homepage = "https://github.com/dineshkumarkummara/langchain-notion-tool"
+Repository = "https://github.com/dineshkumarkummara/langchain-notion-tool"
+"Bug Tracker" = "https://github.com/dineshkumarkummara/langchain-notion-tool/issues"
 
 [tool.hatch.metadata]
 allow-direct-references = true

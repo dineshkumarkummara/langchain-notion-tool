@@ -18,6 +18,7 @@ dist/
 .coverage
 htmlcov/
 .pytest_cache/
+.hypothesis/
 
 # IDEs and editors
 .vscode/

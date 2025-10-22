@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import inspect
 from collections.abc import Mapping
 from typing import TYPE_CHECKING, Any, NamedTuple, Optional
 
@@ -76,13 +77,25 @@ def create_sync_client(
     )
     token = resolved_settings.api_token
     client_cls, _ = _load_client_classes()
-    client_options = dict(client_kwargs.pop("client_options", {}))
-    client_options.setdefault("timeout", resolved_settings.client_timeout)
-    client_options.setdefault("max_retries", resolved_settings.max_retries)
+
     logger.debug(
         "Creating Notion sync client",
         extra={"notion_token": redact_token(token)},
     )
+    init_params = inspect.signature(client_cls.__init__).parameters
+    timeout_ms = int(resolved_settings.client_timeout * 1000)
+    if "options" in init_params:
+        # notion-client >=2.5.0 expects top-level kwargs (auth, timeout_ms, ...)
+        return client_cls(
+            auth=token,
+            timeout_ms=timeout_ms,
+            **client_kwargs,
+        )
+
+    # notion-client <2.5.0 expects `client_options`.
+    client_options = dict(client_kwargs.pop("client_options", {}))
+    client_options.setdefault("timeout", resolved_settings.client_timeout)
+    client_options.setdefault("max_retries", resolved_settings.max_retries)
     return client_cls(auth=token, client_options=client_options, **client_kwargs)
 
 
@@ -108,13 +121,23 @@ def create_async_client(
     )
     token = resolved_settings.api_token
     _, async_client_cls = _load_client_classes()
-    client_options = dict(client_kwargs.pop("client_options", {}))
-    client_options.setdefault("timeout", resolved_settings.client_timeout)
-    client_options.setdefault("max_retries", resolved_settings.max_retries)
+
     logger.debug(
         "Creating Notion async client",
         extra={"notion_token": redact_token(token)},
     )
+    init_params = inspect.signature(async_client_cls.__init__).parameters
+    timeout_ms = int(resolved_settings.client_timeout * 1000)
+    if "options" in init_params:
+        return async_client_cls(
+            auth=token,
+            timeout_ms=timeout_ms,
+            **client_kwargs,
+        )
+
+    client_options = dict(client_kwargs.pop("client_options", {}))
+    client_options.setdefault("timeout", resolved_settings.client_timeout)
+    client_options.setdefault("max_retries", resolved_settings.max_retries)
     return async_client_cls(auth=token, client_options=client_options, **client_kwargs)
 
 
