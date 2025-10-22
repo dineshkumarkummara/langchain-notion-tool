@@ -36,7 +36,7 @@ jobs:
         run: ruff check .
 
       - name: Run mypy
-        run: mypy --config-file mypy.ini
+        run: mypy --config-file mypy.ini src
 
       - name: Run pytest
         run: pytest --cov=langchain_notion_tools --cov-report=term-missing
