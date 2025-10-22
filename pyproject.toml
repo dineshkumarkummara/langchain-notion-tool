@@ -57,7 +57,7 @@ Repository = "https://github.com/dinesh/langchain-notion-tools"
 allow-direct-references = true
 
 [tool.hatch.build.targets.sdist]
-include = ["src", "README.md", "LICENSE", "CHANGELOG.md", "pyproject.toml", "docs", "examples", "mkdocs.yml"]
+include = ["src", "README.md", "LICENSE", "CHANGELOG.md", "pyproject.toml", "docs", "examples", "mkdocs.yml", "langchain-docs-patch", "scripts"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/langchain_notion_tools"]
