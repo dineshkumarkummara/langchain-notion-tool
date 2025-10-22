@@ -19,6 +19,7 @@ from .exceptions import (
     NotionConfigurationError,
     NotionIntegrationError,
 )
+from .tools import NotionSearchInput, NotionSearchResult, NotionSearchTool
 
 __all__ = [
     "__version__",
@@ -32,6 +33,9 @@ __all__ = [
     "create_async_client",
     "create_client_bundle",
     "create_sync_client",
+    "NotionSearchInput",
+    "NotionSearchResult",
+    "NotionSearchTool",
     "redact_token",
 ]
 
