@@ -154,7 +154,7 @@ class NotionWriteTool(BaseTool):
         "Create a new Notion page or update an existing one with structured blocks. "
         "Requires parent information for create operations."
     )
-    args_schema: type[NotionWriteInput] = NotionWriteInput
+    args_schema: Optional[type[NotionWriteInput]] = NotionWriteInput
 
     def __init__(
         self,

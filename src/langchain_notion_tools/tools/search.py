@@ -139,7 +139,7 @@ class NotionSearchTool(BaseTool):
         "Search Notion for pages or databases, or retrieve a specific page or database."
         " Provide a full-text query, page_id, or database_id."
     )
-    args_schema: type[NotionSearchInput] = NotionSearchInput
+    args_schema: Optional[type[NotionSearchInput]] = NotionSearchInput
 
     def __init__(
         self,
