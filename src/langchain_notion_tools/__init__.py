@@ -19,7 +19,16 @@ from .exceptions import (
     NotionConfigurationError,
     NotionIntegrationError,
 )
-from .tools import NotionSearchInput, NotionSearchResult, NotionSearchTool
+from .tools import (
+    NotionPageParent,
+    NotionSearchInput,
+    NotionSearchResult,
+    NotionSearchTool,
+    NotionUpdateInstruction,
+    NotionWriteInput,
+    NotionWriteResult,
+    NotionWriteTool,
+)
 
 __all__ = [
     "__version__",
@@ -33,9 +42,14 @@ __all__ = [
     "create_async_client",
     "create_client_bundle",
     "create_sync_client",
+    "NotionPageParent",
     "NotionSearchInput",
     "NotionSearchResult",
     "NotionSearchTool",
+    "NotionUpdateInstruction",
+    "NotionWriteInput",
+    "NotionWriteResult",
+    "NotionWriteTool",
     "redact_token",
 ]
 
