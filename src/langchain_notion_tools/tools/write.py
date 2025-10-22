@@ -154,8 +154,6 @@ class NotionWriteTool(BaseTool):
         "Create a new Notion page or update an existing one with structured blocks. "
         "Requires parent information for create operations."
     )
-    args_schema: Optional[type[NotionWriteInput]] = NotionWriteInput
-
     def __init__(
         self,
         *,
@@ -167,6 +165,7 @@ class NotionWriteTool(BaseTool):
         env: Mapping[str, str] | None = None,
         **kwargs: Any,
     ) -> None:
+        kwargs.setdefault("args_schema", NotionWriteInput)
         super().__init__(**kwargs)
         self._settings = NotionClientSettings.resolve(
             api_token=api_token,

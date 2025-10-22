@@ -139,8 +139,6 @@ class NotionSearchTool(BaseTool):
         "Search Notion for pages or databases, or retrieve a specific page or database."
         " Provide a full-text query, page_id, or database_id."
     )
-    args_schema: Optional[type[NotionSearchInput]] = NotionSearchInput
-
     def __init__(
         self,
         *,
@@ -152,6 +150,7 @@ class NotionSearchTool(BaseTool):
         env: Mapping[str, str] | None = None,
         **kwargs: Any,
     ) -> None:
+        kwargs.setdefault("args_schema", NotionSearchInput)
         super().__init__(**kwargs)
         self._settings = NotionClientSettings.resolve(
             api_token=api_token,
