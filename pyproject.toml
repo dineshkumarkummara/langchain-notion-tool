@@ -44,6 +44,8 @@ dev = [
   "twine",
   "python-semantic-release",
   "hypothesis",
+  "mkdocs",
+  "mkdocs-material",
 ]
 
 [project.urls]
@@ -55,7 +57,7 @@ Repository = "https://github.com/dinesh/langchain-notion-tools"
 allow-direct-references = true
 
 [tool.hatch.build.targets.sdist]
-include = ["src", "README.md", "LICENSE", "CHANGELOG.md", "pyproject.toml"]
+include = ["src", "README.md", "LICENSE", "CHANGELOG.md", "pyproject.toml", "docs", "examples", "mkdocs.yml"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/langchain_notion_tools"]
@@ -80,3 +82,7 @@ source = ["langchain_notion_tools"]
 [tool.coverage.report]
 show_missing = true
 skip_empty = true
+
+[project.scripts]
+notion-search = "langchain_notion_tools.cli:notion_search_main"
+notion-write = "langchain_notion_tools.cli:notion_write_main"
