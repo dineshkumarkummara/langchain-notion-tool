@@ -137,3 +137,29 @@ def test_create_client_bundle_builds_clients_with_kwargs() -> None:
     assert bundle.client.kwargs["client_options"]["max_retries"] == 2
     assert bundle.async_client.kwargs["client_options"]["timeout"] == 3
     assert bundle.async_client.kwargs["client_options"]["max_retries"] == 4
+
+
+def test_create_clients_supports_options_parameter(monkeypatch: pytest.MonkeyPatch) -> None:
+    class OptionsSyncClient:
+        def __init__(self, *, auth: str, timeout_ms: int, options: Any = None, **kwargs: Any) -> None:
+            self.auth = auth
+            self.timeout_ms = timeout_ms
+            self.options = options
+            self.kwargs = kwargs
+
+    class OptionsAsyncClient:
+        def __init__(self, *, auth: str, timeout_ms: int, options: Any = None, **kwargs: Any) -> None:
+            self.auth = auth
+            self.timeout_ms = timeout_ms
+            self.options = options
+            self.kwargs = kwargs
+
+    monkeypatch.setattr(
+        "langchain_notion_tools.client._load_client_classes",
+        lambda: (OptionsSyncClient, OptionsAsyncClient),
+    )
+    settings = NotionClientSettings(api_token="token", client_timeout=3.5)
+    sync_client = create_sync_client(settings=settings)
+    async_client = create_async_client(settings=settings)
+    assert sync_client.timeout_ms == 3500
+    assert async_client.timeout_ms == 3500

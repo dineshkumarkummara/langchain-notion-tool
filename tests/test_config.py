@@ -118,3 +118,13 @@ def test_redact_token_behaviour() -> None:
     assert redact_token("abcd") == "****"
     assert redact_token("a") == "*"
     assert redact_token(" ") == ""
+
+
+def test_blank_token_raises_error() -> None:
+    with pytest.raises(MissingNotionAPITokenError):
+        NotionClientSettings(api_token="")
+
+
+def test_blank_parent_coerces_to_none() -> None:
+    settings = NotionClientSettings(api_token="token", default_parent_page_id="")
+    assert settings.default_parent_page_id is None

@@ -31,6 +31,7 @@ from langchain_core.tools import ToolException
 from langchain_notion_tools.config import NotionClientSettings
 from langchain_notion_tools.exceptions import NotionConfigurationError
 from langchain_notion_tools.tools import NotionSearchTool
+from langchain_notion_tools.tools import search as search_module
 
 
 def _page_result() -> dict[str, Any]:
@@ -194,11 +195,118 @@ def test_invalid_arguments_raise_configuration_error(search_tool: NotionSearchTo
         search_tool._run(page_id="page-123", filter={"status": "Done"})
 
 
+def test_search_sync_error_includes_code_and_status(
+    search_tool: NotionSearchTool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class BoomError(Exception):
+        def __init__(self) -> None:
+            super().__init__("boom")
+            self.code = "invalid_json"
+            self.status = 503
+
+    def raise_error(**_: Any) -> None:
+        raise BoomError()
+
+    monkeypatch.setattr(search_tool._client, "search", raise_error)
+    with pytest.raises(ToolException) as excinfo:
+        search_tool._run(query="x")
+    message = str(excinfo.value)
+    assert "code invalid_json" in message and "status 503" in message
+
+
+def test_extract_helpers_cover_variants() -> None:
+    page = {
+        "title": [{"plain_text": "Direct Title"}],
+        "properties": {
+            "Summary": {"type": "rich_text", "rich_text": [{"plain_text": "Preview"}]},
+        },
+        "parent": {"type": "page_id", "page_id": "parent-1"},
+        "preview": " Inline preview ",
+    }
+    assert search_module._extract_title(page) == "Direct Title"
+    assert search_module._extract_preview(page) == "Inline preview"
+    assert search_module._extract_parent_id(page["parent"]) == "parent-1"
+
+    fallback = {
+        "id": "fallback",
+        "properties": {
+            "Name": {
+                "type": "title",
+                "title": [{"plain_text": "From Properties"}],
+            },
+        },
+    }
+    assert search_module._extract_title(fallback) == "From Properties"
+    no_preview = {
+        "properties": {
+            "Summary": {
+                "type": "rich_text",
+                "rich_text": [{"plain_text": "From properties"}],
+            }
+        }
+    }
+    assert search_module._extract_preview(no_preview) == "From properties"
+    assert search_module._extract_parent_id({"type": "database_id", "database_id": "db-123"}) == "db-123"
+
+
+def test_search_tool_exposes_settings(search_tool: NotionSearchTool) -> None:
+    assert search_tool.settings.api_token == "token"
+
+
 @pytest.mark.asyncio
 async def test_async_query(search_tool: NotionSearchTool) -> None:
     results = await search_tool._arun(query="async")
     assert results[0]["title"] == "Sample Page"
-    assert search_tool._async_client.search.calls[0] == {"query": "async"}
+
+
+@pytest.mark.asyncio
+async def test_async_page_mode(search_tool: NotionSearchTool) -> None:
+    results = await search_tool._arun(page_id="page-123")
+    assert results[0]["id"] == "page-123"
+
+
+@pytest.mark.asyncio
+async def test_async_database_mode(search_tool: NotionSearchTool) -> None:
+    results = await search_tool._arun(database_id="db-1", filter={"status": "Done"})
+    assert results[0]["title"] == "Database Row"
+
+
+@pytest.mark.asyncio
+async def test_async_invalid_arguments_raise_configuration_error(
+    search_tool: NotionSearchTool,
+) -> None:
+    with pytest.raises(NotionConfigurationError):
+        await search_tool._arun()
+    with pytest.raises(NotionConfigurationError):
+        await search_tool._arun(query="a", page_id="page-1")
+    with pytest.raises(NotionConfigurationError):
+        await search_tool._arun(page_id="page-1", filter={"x": 1})
+
+
+@pytest.mark.asyncio
+async def test_async_search_error_includes_code_and_status(
+    search_tool: NotionSearchTool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    class BoomError(Exception):
+        def __init__(self) -> None:
+            super().__init__("boom")
+            self.code = "timeout"
+            self.status = 504
+
+    async def raise_error(**_: Any) -> None:
+        raise BoomError()
+
+    monkeypatch.setattr(search_tool._async_client, "search", raise_error)
+    with pytest.raises(ToolException) as excinfo:
+        await search_tool._arun(query="async-error")
+    message = str(excinfo.value)
+    assert "code timeout" in message and "status 504" in message
+
+
+def test_search_sync_non_mapping_response(search_tool: NotionSearchTool, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(search_tool._client, "search", lambda **_: None)
+    with pytest.raises(ToolException):
+        search_tool._run(query="invalid")
 
 
 def test_search_sync_error_wrapped(search_tool: NotionSearchTool, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -29,14 +29,24 @@ import pytest
 from hypothesis import given
 from hypothesis import strategies as st
 
+import langchain_notion_tools.blocks as blocks_module
 from langchain_notion_tools.blocks import (
     ALLOWED_BLOCK_TYPES,
     MAX_BLOCKS,
     MAX_TOTAL_TEXT_LENGTH,
+    bulleted_list_item,
+    callout,
     code,
     from_text,
+    heading_1,
+    heading_2,
+    heading_3,
+    numbered_list_item,
     paragraph,
+    quote,
     sanitize_blocks,
+    to_do,
+    toggle,
 )
 from langchain_notion_tools.exceptions import NotionConfigurationError
 
@@ -96,3 +106,56 @@ def test_code_block_links_removed() -> None:
 def test_allowed_block_types_cover_helpers() -> None:
     helper_types = {"paragraph", "heading_1", "heading_2", "heading_3", "bulleted_list_item", "numbered_list_item", "to_do", "toggle", "callout", "quote", "code"}
     assert helper_types <= ALLOWED_BLOCK_TYPES
+
+
+def test_block_helpers_generate_expected_payloads() -> None:
+    assert heading_1("Title")["heading_1"]["rich_text"][0]["text"]["content"] == "Title"
+    assert heading_2("Subtitle")["type"] == "heading_2"
+    assert heading_3("Tertiary")["type"] == "heading_3"
+    assert bulleted_list_item("Item")["bulleted_list_item"]["rich_text"]
+    assert numbered_list_item("First")["numbered_list_item"]["rich_text"]
+    assert to_do("Task", checked=True)["to_do"]["checked"] is True
+    toggle_block = toggle("Toggle", children=[paragraph("Nested")])
+    assert toggle_block["toggle"]["children"][0]["paragraph"]["rich_text"]
+    callout_block = callout("Tip", icon={"type": "emoji", "emoji": "💡"})
+    assert callout_block["callout"]["icon"]["emoji"] == "💡"
+    assert quote("Quote")["quote"]["rich_text"][0]["text"]["content"] == "Quote"
+    assert "children" not in toggle("Solo")["toggle"]
+    assert "icon" not in callout("Tip")["callout"]
+
+
+def test_from_text_handles_additional_constructs() -> None:
+    text = """## Heading Two
+### Heading Three
+1. Numbered
+> Quoted
+Plain text
+```
+code block
+```"""
+    blocks = from_text(text)
+    types = [block["type"] for block in blocks]
+    assert types[:3] == ["heading_2", "heading_3", "numbered_list_item"]
+    assert "quote" in types
+    assert "paragraph" in types
+    assert types[-1] == "code"
+
+
+def test_from_text_appends_unclosed_code_block() -> None:
+    blocks = from_text("```python\nprint('hi')")
+    assert blocks[-1]["type"] == "code"
+    assert blocks[-1]["code"]["language"] == "python"
+
+
+def test_collect_rich_text_filters_non_mappings() -> None:
+    block = {
+        "type": "paragraph",
+        "paragraph": {
+            "rich_text": [
+                {"type": "text", "text": {"content": "ok"}},
+                "invalid",
+            ]
+        },
+    }
+    collected = blocks_module._collect_rich_text(block)
+    assert len(collected) == 1

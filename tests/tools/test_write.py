@@ -30,6 +30,7 @@ from langchain_core.tools import ToolException
 
 from langchain_notion_tools.config import NotionClientSettings
 from langchain_notion_tools.exceptions import NotionConfigurationError
+from langchain_notion_tools.tools import write as write_module
 from langchain_notion_tools.tools.write import NotionWriteTool
 
 
@@ -209,6 +210,21 @@ def test_append_blocks_and_properties_summary(write_tool: NotionWriteTool) -> No
     assert write_tool._client.pages.retrieve_calls[-1] == "page-both"
 
 
+def test_create_page_under_database(write_tool: NotionWriteTool) -> None:
+    result = write_tool._run(
+        parent={"database_id": "db-1"},
+        properties={
+            "Name": {
+                "title": [
+                    {"text": {"content": "Row"}},
+                ]
+            }
+        },
+    )
+    assert result["action"] == "created"
+    assert result["summary"] == "Created page under database db-1 with title 'untitled' (0 block(s); properties: Name)."
+
+
 def test_code_block_links_removed(write_tool: NotionWriteTool) -> None:
     block = {
         "object": "block",
@@ -291,6 +307,37 @@ def test_update_properties_error_wrapped(write_tool: NotionWriteTool, monkeypatc
     assert "Update page properties failed" in str(excinfo.value)
 
 
+def test_update_with_empty_properties_generates_no_changes_summary(
+    write_tool: NotionWriteTool,
+) -> None:
+    result = write_tool._run(update={"page_id": "page-none", "mode": "append"}, properties={})
+    assert result["summary"] == "No changes on page page-none."
+    assert result["url"] == "https://notion.so/page-none"
+
+
+def test_format_property_keys_variants() -> None:
+    assert write_module._format_property_keys([]) == "no properties"
+    assert write_module._format_property_keys(["A"]) == "properties: A"
+    assert write_module._format_property_keys(["A", "B", "C", "D"]) == "properties: A, B, C, ..."
+
+
+def test_write_raise_tool_error_includes_code_status() -> None:
+    class BoomError(Exception):
+        def __init__(self) -> None:
+            super().__init__("boom")
+            self.code = "invalid_request"
+            self.status = 400
+
+    with pytest.raises(ToolException) as excinfo:
+        write_module._raise_tool_error("Create page", BoomError())
+    message = str(excinfo.value)
+    assert "code invalid_request" in message and "status 400" in message
+
+
+def test_write_tool_settings_exposed(write_tool: NotionWriteTool) -> None:
+    assert write_tool.settings.api_token == "token"
+
+
 @pytest.mark.asyncio
 async def test_async_create(write_tool: NotionWriteTool) -> None:
     result = await write_tool._arun(title="Async", parent={"page_id": "parent-async"})
@@ -298,6 +345,17 @@ async def test_async_create(write_tool: NotionWriteTool) -> None:
     assert result["url"] == "https://notion.so/page-created"
     async_calls = write_tool._async_client.pages.create_calls
     assert async_calls[0]["parent"] == {"type": "page_id", "page_id": "parent-async"}
+
+
+@pytest.mark.asyncio
+async def test_async_create_dry_run(write_tool: NotionWriteTool) -> None:
+    result = await write_tool._arun(
+        title="Async Dry",
+        parent={"page_id": "parent-async-dry"},
+        is_dry_run=True,
+    )
+    assert result["action"] == "dry_run"
+    assert result["summary"].startswith("Dry run: would create page")
 
 
 @pytest.mark.asyncio
@@ -336,3 +394,19 @@ async def test_async_update_error_wrapped(write_tool: NotionWriteTool, monkeypat
             blocks=[{"object": "block", "type": "paragraph", "paragraph": {"rich_text": []}}],
         )
     assert "Update page blocks failed" in str(excinfo.value)
+
+
+@pytest.mark.asyncio
+async def test_async_update_properties_error_wrapped(
+    write_tool: NotionWriteTool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def boom(*, page_id: str, properties: Mapping[str, Any]) -> None:  # type: ignore[override]
+        raise RuntimeError(f"fail props {page_id}")
+
+    monkeypatch.setattr(write_tool._async_client.pages, "update", boom)
+    with pytest.raises(ToolException) as excinfo:
+        await write_tool._arun(
+            update={"page_id": "page-props", "mode": "append"},
+            properties={"Status": {"select": {"name": "Done"}}},
+        )
+    assert "Update page properties failed" in str(excinfo.value)
