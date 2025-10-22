@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Optional
+
 __all__ = [
     "NotionIntegrationError",
     "NotionConfigurationError",
@@ -24,8 +26,7 @@ class MissingNotionAPITokenError(NotionConfigurationError):
 class NotionAPIToolError(NotionIntegrationError):
     """Raised when the Notion API returns an error that should surface in tool output."""
 
-    def __init__(self, message: str, *, status: int | None = None, code: str | None = None) -> None:
+    def __init__(self, message: str, *, status: Optional[int] = None, code: Optional[str] = None) -> None:
         super().__init__(message)
         self.status = status
         self.code = code
-

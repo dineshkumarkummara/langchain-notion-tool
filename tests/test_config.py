@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-from typing import Mapping
+from collections.abc import Mapping
 
 import pytest
 
 from langchain_notion_tools.config import (
-    NOTION_API_TOKEN_ENV_VAR,
-    NOTION_DEFAULT_PARENT_PAGE_ID_ENV_VAR,
     NotionClientSettings,
     redact_token,
 )

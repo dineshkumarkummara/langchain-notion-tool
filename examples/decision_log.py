@@ -7,7 +7,6 @@ import argparse
 import json
 import os
 from pathlib import Path
-from typing import Optional
 
 from langchain_notion_tools import NotionSearchTool, NotionWriteTool, from_text
 
@@ -23,7 +22,7 @@ def _load_dotenv(path: Path) -> None:
             os.environ[key.strip()] = value.strip()
 
 
-def main(argv: Optional[list[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Append a decision log to a Notion spec page")
     parser.add_argument("query", help="Search query used to locate the spec")
     parser.add_argument("decision_markdown", help="Markdown text describing the decision")

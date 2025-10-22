@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import os
-from typing import Mapping
+from collections.abc import Mapping
+from typing import Optional
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -19,6 +20,14 @@ __all__ = [
 NOTION_API_TOKEN_ENV_VAR = "NOTION_API_TOKEN"
 NOTION_DEFAULT_PARENT_PAGE_ID_ENV_VAR = "NOTION_DEFAULT_PARENT_PAGE_ID"
 
+# Accept both the intended environment variable names and the constant identifiers
+# occasionally used in configuration samples.
+_TOKEN_ENV_KEYS = (NOTION_API_TOKEN_ENV_VAR, "NOTION_API_TOKEN_ENV_VAR")
+_DEFAULT_PARENT_KEYS = (
+    NOTION_DEFAULT_PARENT_PAGE_ID_ENV_VAR,
+    "NOTION_DEFAULT_PARENT_PAGE_ID_ENV_VAR",
+)
+
 
 class NotionClientSettings(BaseModel):
     """Validated configuration for accessing the Notion API."""
@@ -28,7 +37,7 @@ class NotionClientSettings(BaseModel):
     api_token: str = Field(
         ..., description="Notion integration token used for authentication."
     )
-    default_parent_page_id: str | None = Field(
+    default_parent_page_id: Optional[str] = Field(
         default=None,
         description="Optional fallback parent page ID used when creating pages.",
     )
@@ -55,7 +64,7 @@ class NotionClientSettings(BaseModel):
 
     @field_validator("default_parent_page_id")
     @classmethod
-    def _empty_parent_as_none(cls, value: str | None) -> str | None:
+    def _empty_parent_as_none(cls, value: Optional[str]) -> Optional[str]:
         if value == "":
             return None
         return value
@@ -63,18 +72,32 @@ class NotionClientSettings(BaseModel):
     @classmethod
     def from_env(
         cls,
-        env: Mapping[str, str] | None = None,
-    ) -> "NotionClientSettings":
+        env: Optional[Mapping[str, str]] = None,
+    ) -> NotionClientSettings:
         """Load settings from environment variables."""
 
         source = env if env is not None else os.environ
-        token = source.get(NOTION_API_TOKEN_ENV_VAR)
-        if token is None or not token.strip():
+        token = next(
+            (
+                value
+                for key in _TOKEN_ENV_KEYS
+                if (value := source.get(key)) is not None and value.strip()
+            ),
+            None,
+        )
+        if token is None:
             raise MissingNotionAPITokenError(
                 "Missing Notion API token. Set the"
                 f" {NOTION_API_TOKEN_ENV_VAR} environment variable."
             )
-        default_parent = source.get(NOTION_DEFAULT_PARENT_PAGE_ID_ENV_VAR)
+        default_parent = next(
+            (
+                value
+                for key in _DEFAULT_PARENT_KEYS
+                if (value := source.get(key)) is not None
+            ),
+            None,
+        )
         try:
             timeout = float(source.get("NOTION_API_TIMEOUT", "30"))
         except ValueError as exc:  # pragma: no cover - env validation
@@ -94,11 +117,11 @@ class NotionClientSettings(BaseModel):
     def resolve(
         cls,
         *,
-        api_token: str | None = None,
-        default_parent_page_id: str | None = None,
-        settings: "NotionClientSettings" | None = None,
-        env: Mapping[str, str] | None = None,
-    ) -> "NotionClientSettings":
+        api_token: Optional[str] = None,
+        default_parent_page_id: Optional[str] = None,
+        settings: Optional[NotionClientSettings] = None,
+        env: Optional[Mapping[str, str]] = None,
+    ) -> NotionClientSettings:
         """Resolve settings from explicit values, existing settings, or env."""
 
         base = settings

@@ -3,21 +3,16 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Iterable, Mapping
+from collections.abc import Iterable, Mapping
+from typing import Any, Optional, cast
 
-import httpx
 from langchain_core.callbacks import AsyncCallbackManagerForToolRun, CallbackManagerForToolRun
-from langchain_core.tools import BaseTool, ToolExecutionError
-from pydantic import BaseModel, Field, ValidationError, model_validator
+from langchain_core.tools import BaseTool, ToolException
+from pydantic import BaseModel, Field, ValidationError
 
 from ..client import create_async_client, create_sync_client
 from ..config import NotionClientSettings
 from ..exceptions import NotionConfigurationError
-
-try:  # pragma: no cover - notion-client always installed in runtime
-    from notion_client.errors import APIResponseError
-except ImportError:  # pragma: no cover - safety for docs builds
-    APIResponseError = Exception  # type: ignore[misc,assignment]
 
 __all__ = [
     "NotionSearchInput",
@@ -26,22 +21,18 @@ __all__ = [
 ]
 
 logger = logging.getLogger(__name__)
+tool_error_cls = cast(type[Exception], ToolException)
 
 
 def _raise_tool_error(operation: str, error: Exception) -> None:
-    if isinstance(error, ToolExecutionError):  # pragma: no cover - defensive
-        raise
-    if isinstance(error, NotionConfigurationError):  # pragma: no cover - upstream
-        raise
     message = f"{operation} failed: {error}"
-    if isinstance(error, APIResponseError):
-        status = getattr(error, "status", None)
-        code = getattr(error, "code", None)
-        if code:
-            message += f" (code {code})"
-        if status:
-            message += f" [status {status}]"
-    raise ToolExecutionError(message) from error
+    status = getattr(error, "status", None)
+    code = getattr(error, "code", None)
+    if code:
+        message += f" (code {code})"
+    if status:
+        message += f" [status {status}]"
+    raise tool_error_cls(message) from error
 
 
 def _rich_text_to_plain_text(items: Iterable[Mapping[str, Any]]) -> str:
@@ -72,10 +63,10 @@ def _extract_title(data: Mapping[str, Any]) -> str:
                 title = _rich_text_to_plain_text(prop["rich_text"])
                 if title:
                     return title
-    return data.get("id", "")
+    return str(data.get("id", ""))
 
 
-def _extract_preview(data: Mapping[str, Any]) -> str | None:
+def _extract_preview(data: Mapping[str, Any]) -> Optional[str]:
     if "preview" in data and isinstance(data["preview"], str):
         return data["preview"].strip() or None
 
@@ -91,7 +82,7 @@ def _extract_preview(data: Mapping[str, Any]) -> str | None:
     return None
 
 
-def _extract_parent_id(parent: Any) -> str | None:
+def _extract_parent_id(parent: Any) -> Optional[str]:
     if not isinstance(parent, Mapping):
         return None
     parent_type = parent.get("type")
@@ -108,12 +99,12 @@ class NotionSearchResult(BaseModel):
     title: str = Field(description="Best-effort extracted title for the Notion object.")
     object_type: str = Field(description="Notion object type such as 'page' or 'database'.")
     id: str = Field(description="Identifier of the result object.")
-    url: str | None = Field(default=None, description="URL to open the result in Notion.")
-    parent_id: str | None = Field(
+    url: Optional[str] = Field(default=None, description="URL to open the result in Notion.")
+    parent_id: Optional[str] = Field(
         default=None,
         description="Parent page or database identifier when available.",
     )
-    preview: str | None = Field(
+    preview: Optional[str] = Field(
         default=None, description="Short text preview extracted from the object."
     )
 
@@ -121,43 +112,30 @@ class NotionSearchResult(BaseModel):
 class NotionSearchInput(BaseModel):
     """Inputs accepted by the Notion search tool."""
 
-    query: str | None = Field(
+    query: Optional[str] = Field(
         default=None,
         description="Full-text query passed to the Notion search endpoint.",
     )
-    page_id: str | None = Field(
+    page_id: Optional[str] = Field(
         default=None,
         description="Identifier of a specific page to retrieve.",
     )
-    database_id: str | None = Field(
+    database_id: Optional[str] = Field(
         default=None,
         description="Identifier of a database to query.",
     )
-    filter: Mapping[str, Any] | None = Field(
+    filter: Optional[dict[str, object]] = Field(
         default=None,
         description=(
             "Optional filter payload forwarded to Notion's search or database query APIs."
         ),
     )
 
-    @model_validator(mode="after")
-    def _validate_target(cls, values: "NotionSearchInput") -> "NotionSearchInput":
-        targets = [values.query, values.page_id, values.database_id]
-        provided = sum(1 for target in targets if target)
-        if provided != 1:
-            raise ValueError(
-                "Provide exactly one of 'query', 'page_id', or 'database_id'."
-            )
-        if values.page_id and values.filter is not None:
-            raise ValueError("Filters cannot be used when retrieving a single page.")
-        return values
-
-
 class NotionSearchTool(BaseTool):
     """LangChain tool that exposes Notion search capabilities."""
 
-    name = "notion_search"
-    description = (
+    name: str = "notion_search"
+    description: str = (
         "Search Notion for pages or databases, or retrieve a specific page or database."
         " Provide a full-text query, page_id, or database_id."
     )
@@ -190,39 +168,60 @@ class NotionSearchTool(BaseTool):
 
     def _run(
         self,
-        query: str | None = None,
-        page_id: str | None = None,
-        database_id: str | None = None,
-        filter: Mapping[str, Any] | None = None,
+        query: Optional[str] = None,
+        page_id: Optional[str] = None,
+        database_id: Optional[str] = None,
+        filter: Optional[dict[str, Any]] = None,
         run_manager: CallbackManagerForToolRun | None = None,
     ) -> list[dict[str, Any]]:
+        filter_cast = cast(Optional[dict[str, object]], filter)
         try:
             payload = NotionSearchInput(
                 query=query,
                 page_id=page_id,
                 database_id=database_id,
-                filter=filter,
+                filter=filter_cast,
             )
         except ValidationError as exc:  # pragma: no cover - guarded by args_schema
             raise NotionConfigurationError(str(exc)) from exc
+
+        targets = [payload.query, payload.page_id, payload.database_id]
+        if sum(1 for target in targets if target) != 1:
+            raise NotionConfigurationError(
+                "Provide exactly one of query, page_id, or database_id."
+            )
+        if payload.page_id and payload.filter is not None:
+            raise NotionConfigurationError(
+                "Filters are not supported when retrieving a single page."
+            )
 
         results = self._search_sync(payload)
         return [result.model_dump() for result in results]
 
     async def _arun(
         self,
-        query: str | None = None,
-        page_id: str | None = None,
-        database_id: str | None = None,
-        filter: Mapping[str, Any] | None = None,
+        query: Optional[str] = None,
+        page_id: Optional[str] = None,
+        database_id: Optional[str] = None,
+        filter: Optional[dict[str, Any]] = None,
         run_manager: AsyncCallbackManagerForToolRun | None = None,
     ) -> list[dict[str, Any]]:
+        filter_cast = cast(Optional[dict[str, object]], filter)
         payload = NotionSearchInput(
             query=query,
             page_id=page_id,
             database_id=database_id,
-            filter=filter,
+            filter=filter_cast,
         )
+        targets = [payload.query, payload.page_id, payload.database_id]
+        if sum(1 for target in targets if target) != 1:
+            raise NotionConfigurationError(
+                "Provide exactly one of query, page_id, or database_id."
+            )
+        if payload.page_id and payload.filter is not None:
+            raise NotionConfigurationError(
+                "Filters are not supported when retrieving a single page."
+            )
         results = await self._search_async(payload)
         return [result.model_dump() for result in results]
 
@@ -240,32 +239,48 @@ class NotionSearchTool(BaseTool):
         if payload.page_id:
             try:
                 page = client.pages.retrieve(page_id=payload.page_id)
-            except (APIResponseError, httpx.HTTPError, Exception) as exc:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
                 _raise_tool_error("Retrieve page", exc)
-            return [self._normalize_result(page)]
+            if not isinstance(page, Mapping):
+                _raise_tool_error("Retrieve page", TypeError("unexpected payload"))
+            return [self._normalize_result(cast(Mapping[str, Any], page))]
         if payload.database_id:
             params: dict[str, Any] = {}
             if payload.filter is not None:
-                params["filter"] = payload.filter
+                params["filter"] = cast(dict[str, Any], payload.filter)
             try:
                 response = client.databases.query(
                     database_id=payload.database_id,
                     **params,
                 )
-            except (APIResponseError, httpx.HTTPError, Exception) as exc:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
                 _raise_tool_error("Query database", exc)
-            items = response.get("results", []) if isinstance(response, Mapping) else []
-            return [self._normalize_result(item) for item in items]
+            if not isinstance(response, Mapping):
+                _raise_tool_error("Query database", TypeError("unexpected payload"))
+            response_mapping = cast(Mapping[str, Any], response)
+            items = response_mapping.get("results", [])
+            return [
+                self._normalize_result(cast(Mapping[str, Any], item))
+                for item in items
+                if isinstance(item, Mapping)
+            ]
 
         params = {"query": payload.query}
         if payload.filter is not None:
-            params["filter"] = payload.filter
+            params["filter"] = cast(dict[str, Any], payload.filter)
         try:
             response = client.search(**params)
-        except (APIResponseError, httpx.HTTPError, Exception) as exc:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
             _raise_tool_error("Search", exc)
-        items = response.get("results", []) if isinstance(response, Mapping) else []
-        return [self._normalize_result(item) for item in items]
+        if not isinstance(response, Mapping):
+            _raise_tool_error("Search", TypeError("unexpected payload"))
+        response_mapping = cast(Mapping[str, Any], response)
+        items = response_mapping.get("results", [])
+        return [
+            self._normalize_result(cast(Mapping[str, Any], item))
+            for item in items
+            if isinstance(item, Mapping)
+        ]
 
     async def _search_async(self, payload: NotionSearchInput) -> list[NotionSearchResult]:
         client = self._async_client
@@ -281,32 +296,48 @@ class NotionSearchTool(BaseTool):
         if payload.page_id:
             try:
                 page = await client.pages.retrieve(page_id=payload.page_id)
-            except (APIResponseError, httpx.HTTPError, Exception) as exc:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
                 _raise_tool_error("Retrieve page", exc)
-            return [self._normalize_result(page)]
+            if not isinstance(page, Mapping):
+                _raise_tool_error("Retrieve page", TypeError("unexpected payload"))
+            return [self._normalize_result(cast(Mapping[str, Any], page))]
         if payload.database_id:
             params: dict[str, Any] = {}
             if payload.filter is not None:
-                params["filter"] = payload.filter
+                params["filter"] = cast(dict[str, Any], payload.filter)
             try:
                 response = await client.databases.query(
                     database_id=payload.database_id,
                     **params,
                 )
-            except (APIResponseError, httpx.HTTPError, Exception) as exc:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
                 _raise_tool_error("Query database", exc)
-            items = response.get("results", []) if isinstance(response, Mapping) else []
-            return [self._normalize_result(item) for item in items]
+            if not isinstance(response, Mapping):
+                _raise_tool_error("Query database", TypeError("unexpected payload"))
+            response_mapping = cast(Mapping[str, Any], response)
+            items = response_mapping.get("results", [])
+            return [
+                self._normalize_result(cast(Mapping[str, Any], item))
+                for item in items
+                if isinstance(item, Mapping)
+            ]
 
         params = {"query": payload.query}
         if payload.filter is not None:
-            params["filter"] = payload.filter
+            params["filter"] = cast(dict[str, Any], payload.filter)
         try:
             response = await client.search(**params)
-        except (APIResponseError, httpx.HTTPError, Exception) as exc:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
             _raise_tool_error("Search", exc)
-        items = response.get("results", []) if isinstance(response, Mapping) else []
-        return [self._normalize_result(item) for item in items]
+        if not isinstance(response, Mapping):
+            _raise_tool_error("Search", TypeError("unexpected payload"))
+        response_mapping = cast(Mapping[str, Any], response)
+        items = response_mapping.get("results", [])
+        return [
+            self._normalize_result(cast(Mapping[str, Any], item))
+            for item in items
+            if isinstance(item, Mapping)
+        ]
 
     def _normalize_result(self, item: Mapping[str, Any]) -> NotionSearchResult:
         object_type = item.get("object", "unknown")

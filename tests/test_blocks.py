@@ -4,19 +4,19 @@ import json
 from pathlib import Path
 
 import pytest
-from hypothesis import given, strategies as st
+from hypothesis import given
+from hypothesis import strategies as st
 
 from langchain_notion_tools.blocks import (
     ALLOWED_BLOCK_TYPES,
     MAX_BLOCKS,
     MAX_TOTAL_TEXT_LENGTH,
+    code,
+    from_text,
     paragraph,
     sanitize_blocks,
-    from_text,
-    code,
 )
 from langchain_notion_tools.exceptions import NotionConfigurationError
-
 
 GOLDEN_TEXT = """# Title
 

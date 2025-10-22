@@ -3,22 +3,17 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Iterable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
+from typing import Any, Optional, cast
 
-import httpx
 from langchain_core.callbacks import AsyncCallbackManagerForToolRun, CallbackManagerForToolRun
-from langchain_core.tools import BaseTool, ToolExecutionError
+from langchain_core.tools import BaseTool, ToolException
 from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from ..blocks import sanitize_blocks
 from ..client import create_async_client, create_sync_client
 from ..config import NotionClientSettings
 from ..exceptions import NotionConfigurationError
-
-try:  # pragma: no cover
-    from notion_client.errors import APIResponseError
-except ImportError:  # pragma: no cover
-    APIResponseError = Exception  # type: ignore[misc,assignment]
 
 __all__ = [
     "NotionPageParent",
@@ -29,6 +24,7 @@ __all__ = [
 ]
 
 logger = logging.getLogger(__name__)
+tool_error_cls = cast(type[Exception], ToolException)
 
 
 def _format_property_keys(keys: Sequence[str]) -> str:
@@ -41,31 +37,26 @@ def _format_property_keys(keys: Sequence[str]) -> str:
 
 
 def _raise_tool_error(operation: str, error: Exception) -> None:
-    if isinstance(error, ToolExecutionError):  # pragma: no cover
-        raise
-    if isinstance(error, NotionConfigurationError):  # pragma: no cover
-        raise
     message = f"{operation} failed: {error}"
-    if isinstance(error, APIResponseError):
-        status = getattr(error, "status", None)
-        code = getattr(error, "code", None)
-        if code:
-            message += f" (code {code})"
-        if status:
-            message += f" [status {status}]"
-    raise ToolExecutionError(message) from error
+    status = getattr(error, "status", None)
+    code = getattr(error, "code", None)
+    if code:
+        message += f" (code {code})"
+    if status:
+        message += f" [status {status}]"
+    raise tool_error_cls(message) from error
 
 
 class NotionPageParent(BaseModel):
     """Parent reference for new Notion pages."""
 
-    page_id: str | None = Field(default=None, description="Parent page identifier.")
-    database_id: str | None = Field(
+    page_id: Optional[str] = Field(default=None, description="Parent page identifier.")
+    database_id: Optional[str] = Field(
         default=None, description="Parent database identifier when creating database rows."
     )
 
     @model_validator(mode="after")
-    def _validate_choice(self) -> "NotionPageParent":
+    def _validate_choice(self) -> NotionPageParent:
         provided = [value for value in (self.page_id, self.database_id) if value]
         if len(provided) != 1:
             raise ValueError("Provide exactly one of 'page_id' or 'database_id' for parent.")
@@ -93,7 +84,7 @@ class NotionUpdateInstruction(BaseModel):
     mode: str = Field(description="Update mode, expected to be 'append' or 'replace'.")
 
     @model_validator(mode="after")
-    def _validate_mode(self) -> "NotionUpdateInstruction":
+    def _validate_mode(self) -> NotionUpdateInstruction:
         if self.mode not in {"append", "replace"}:
             raise ValueError("mode must be either 'append' or 'replace'.")
         return self
@@ -102,23 +93,23 @@ class NotionUpdateInstruction(BaseModel):
 class NotionWriteInput(BaseModel):
     """Inputs accepted by the Notion write tool."""
 
-    title: str | None = Field(
+    title: Optional[str] = Field(
         default=None,
         description="Title for the page. Required when creating under a page parent unless properties are provided.",
     )
-    parent: NotionPageParent | None = Field(
+    parent: Optional[NotionPageParent] = Field(
         default=None,
         description="Parent reference. Required for create operations when update is not provided.",
     )
-    blocks: list[Mapping[str, Any]] | None = Field(
+    blocks: Optional[list[dict[str, object]]] = Field(
         default=None,
         description="Optional list of Notion block payloads to include in the page.",
     )
-    update: NotionUpdateInstruction | None = Field(
+    update: Optional[NotionUpdateInstruction] = Field(
         default=None,
         description="Optional update instructions. Not yet supported for this revision.",
     )
-    properties: Mapping[str, Any] | None = Field(
+    properties: Optional[dict[str, object]] = Field(
         default=None,
         description="Optional properties payload, required when writing to a database parent.",
     )
@@ -128,7 +119,7 @@ class NotionWriteInput(BaseModel):
     )
 
     @model_validator(mode="after")
-    def _validate_operation(self) -> "NotionWriteInput":
+    def _validate_operation(self) -> NotionWriteInput:
         if self.update is None and self.parent is None:
             raise ValueError("A parent is required when update instructions are not provided.")
         if self.update is not None and self.parent is not None:
@@ -150,16 +141,16 @@ class NotionWriteResult(BaseModel):
     """Structured output from the Notion write tool."""
 
     action: str = Field(description="Indicates whether the tool created, updated, or previewed content.")
-    page_id: str | None = Field(default=None, description="Identifier of the affected page.")
-    url: str | None = Field(default=None, description="URL for the affected Notion page.")
+    page_id: Optional[str] = Field(default=None, description="Identifier of the affected page.")
+    url: Optional[str] = Field(default=None, description="URL for the affected Notion page.")
     summary: str = Field(description="Human-readable summary of the performed action.")
 
 
 class NotionWriteTool(BaseTool):
     """LangChain tool that creates or updates Notion content."""
 
-    name = "notion_write"
-    description = (
+    name: str = "notion_write"
+    description: str = (
         "Create a new Notion page or update an existing one with structured blocks. "
         "Requires parent information for create operations."
     )
@@ -192,79 +183,65 @@ class NotionWriteTool(BaseTool):
 
     def _run(
         self,
-        title: str | None = None,
-        parent: Mapping[str, Any] | None = None,
-        blocks: list[Mapping[str, Any]] | None = None,
-        update: Mapping[str, Any] | None = None,
-        properties: Mapping[str, Any] | None = None,
+        title: Optional[str] = None,
+        parent: Optional[Mapping[str, Any]] = None,
+        blocks: Optional[list[Mapping[str, Any]]] = None,
+        update: Optional[Mapping[str, Any]] = None,
+        properties: Optional[Mapping[str, Any]] = None,
         is_dry_run: bool = False,
         run_manager: CallbackManagerForToolRun | None = None,
     ) -> dict[str, Any]:
+        blocks_list = [dict(block) for block in blocks] if blocks else None
+        update_dict = dict(update) if update is not None else None
+        properties_dict = dict(properties) if properties is not None else None
+
         try:
-            payload = self._coerce_payload(
+            payload = NotionWriteInput(
                 title=title,
                 parent=parent,
-                blocks=blocks,
-                update=update,
-                properties=properties,
+                blocks=blocks_list,
+                update=update_dict,
+                properties=properties_dict,
                 is_dry_run=is_dry_run,
             )
         except ValidationError as exc:  # pragma: no cover - handled by args_schema
             raise NotionConfigurationError(str(exc)) from exc
-
         result = self._execute_sync(payload)
         return result.model_dump()
 
     async def _arun(
         self,
-        title: str | None = None,
-        parent: Mapping[str, Any] | None = None,
-        blocks: list[Mapping[str, Any]] | None = None,
-        update: Mapping[str, Any] | None = None,
-        properties: Mapping[str, Any] | None = None,
+        title: Optional[str] = None,
+        parent: Optional[Mapping[str, Any]] = None,
+        blocks: Optional[list[Mapping[str, Any]]] = None,
+        update: Optional[Mapping[str, Any]] = None,
+        properties: Optional[Mapping[str, Any]] = None,
         is_dry_run: bool = False,
         run_manager: AsyncCallbackManagerForToolRun | None = None,
     ) -> dict[str, Any]:
-        payload = self._coerce_payload(
+        blocks_list = [dict(block) for block in blocks] if blocks else None
+        update_dict = dict(update) if update is not None else None
+        properties_dict = dict(properties) if properties is not None else None
+
+        payload = NotionWriteInput(
             title=title,
             parent=parent,
-            blocks=blocks,
-            update=update,
-            properties=properties,
+            blocks=blocks_list,
+            update=update_dict,
+            properties=properties_dict,
             is_dry_run=is_dry_run,
         )
         result = await self._execute_async(payload)
         return result.model_dump()
 
-    def _coerce_payload(
-        self,
-        *,
-        title: str | None,
-        parent: Mapping[str, Any] | None,
-        blocks: list[Mapping[str, Any]] | None,
-        update: Mapping[str, Any] | None,
-        properties: Mapping[str, Any] | None,
-        is_dry_run: bool,
-    ) -> NotionWriteInput:
-        parent_model = None
-        if parent is not None:
-            parent_model = NotionPageParent(**parent)
-        update_model = None
-        if update is not None:
-            update_model = NotionUpdateInstruction(**update)
-        return NotionWriteInput(
-            title=title,
-            parent=parent_model,
-            blocks=blocks,
-            update=update_model,
-            properties=properties,
-            is_dry_run=is_dry_run,
-        )
-
     def _execute_sync(self, payload: NotionWriteInput) -> NotionWriteResult:
         if payload.update is not None:
             return self._handle_update_sync(payload)
-        sanitized_blocks = self._sanitize_blocks(payload.blocks)
+        sanitized_blocks = self._sanitize_blocks(
+            [cast(dict[str, Any], dict(block)) for block in payload.blocks]
+            if payload.blocks
+            else None
+        )
         logger.debug(
             "Creating Notion page (sync)",
             extra={
@@ -286,20 +263,27 @@ class NotionWriteTool(BaseTool):
 
         try:
             response = self._client.pages.create(**create_payload)
-        except (APIResponseError, httpx.HTTPError, Exception) as exc:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
             _raise_tool_error("Create page", exc)
+        if not isinstance(response, Mapping):
+            _raise_tool_error("Create page", TypeError("unexpected payload"))
+        response_mapping = cast(Mapping[str, Any], response)
         summary = self._summarize_create(
             payload,
             sanitized_blocks,
             property_keys,
             dry_run=False,
         )
-        return self._build_result(action="created", response=response, summary=summary)
+        return self._build_result(action="created", response=response_mapping, summary=summary)
 
     async def _execute_async(self, payload: NotionWriteInput) -> NotionWriteResult:
         if payload.update is not None:
             return await self._handle_update_async(payload)
-        sanitized_blocks = self._sanitize_blocks(payload.blocks)
+        sanitized_blocks = self._sanitize_blocks(
+            [cast(dict[str, Any], dict(block)) for block in payload.blocks]
+            if payload.blocks
+            else None
+        )
         logger.debug(
             "Creating Notion page (async)",
             extra={
@@ -321,19 +305,22 @@ class NotionWriteTool(BaseTool):
 
         try:
             response = await self._async_client.pages.create(**create_payload)
-        except (APIResponseError, httpx.HTTPError, Exception) as exc:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
             _raise_tool_error("Create page", exc)
+        if not isinstance(response, Mapping):
+            _raise_tool_error("Create page", TypeError("unexpected payload"))
+        response_mapping = cast(Mapping[str, Any], response)
         summary = self._summarize_create(
             payload,
             sanitized_blocks,
             property_keys,
             dry_run=False,
         )
-        return self._build_result(action="created", response=response, summary=summary)
+        return self._build_result(action="created", response=response_mapping, summary=summary)
 
     def _sanitize_blocks(
         self,
-        blocks: list[Mapping[str, Any]] | None,
+        blocks: list[dict[str, Any]] | None,
     ) -> list[dict[str, Any]]:
         if not blocks:
             return []
@@ -347,7 +334,8 @@ class NotionWriteTool(BaseTool):
         if payload.parent is None:
             raise NotionConfigurationError("Parent must be provided for create operations.")
 
-        properties = dict(payload.properties or {})
+        properties_input = cast(Optional[dict[str, Any]], payload.properties)
+        properties = dict(properties_input or {})
         if payload.title and payload.parent.page_id:
             properties.setdefault(
                 "title",
@@ -383,7 +371,7 @@ class NotionWriteTool(BaseTool):
         action_phrase = "would create" if dry_run else "Created"
         prefix = "Dry run: " if dry_run else ""
         title = payload.title or "untitled"
-        blocks_fragment = f"{blocks_count} block(s)" if blocks_count else "no blocks"
+        blocks_fragment = f"{blocks_count} block(s)"
         properties_fragment = _format_property_keys(property_keys)
         return (
             f"{prefix}{action_phrase} page under {parent_desc} with title '{title}'"
@@ -392,7 +380,11 @@ class NotionWriteTool(BaseTool):
 
     def _handle_update_sync(self, payload: NotionWriteInput) -> NotionWriteResult:
         assert payload.update is not None
-        sanitized_blocks = self._sanitize_blocks(payload.blocks)
+        sanitized_blocks = self._sanitize_blocks(
+            [cast(dict[str, Any], dict(block)) for block in payload.blocks]
+            if payload.blocks
+            else None
+        )
         summary = self._summarize_update(payload, sanitized_blocks, dry_run=payload.is_dry_run)
         if payload.is_dry_run:
             return NotionWriteResult(
@@ -412,7 +404,11 @@ class NotionWriteTool(BaseTool):
 
     async def _handle_update_async(self, payload: NotionWriteInput) -> NotionWriteResult:
         assert payload.update is not None
-        sanitized_blocks = self._sanitize_blocks(payload.blocks)
+        sanitized_blocks = self._sanitize_blocks(
+            [cast(dict[str, Any], dict(block)) for block in payload.blocks]
+            if payload.blocks
+            else None
+        )
         summary = self._summarize_update(payload, sanitized_blocks, dry_run=payload.is_dry_run)
         if payload.is_dry_run:
             return NotionWriteResult(
@@ -440,9 +436,9 @@ class NotionWriteTool(BaseTool):
             try:
                 self._client.pages.update(
                     page_id=payload.update.page_id,
-                    properties=payload.properties,
+                    properties=cast(dict[str, Any], payload.properties),
                 )
-            except (APIResponseError, httpx.HTTPError, Exception) as exc:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
                 _raise_tool_error("Update page properties", exc)
         if blocks:
             params: dict[str, Any] = {
@@ -453,7 +449,7 @@ class NotionWriteTool(BaseTool):
                 params["replace"] = True
             try:
                 self._client.blocks.children.append(**params)
-            except (APIResponseError, httpx.HTTPError, Exception) as exc:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
                 _raise_tool_error("Update page blocks", exc)
 
     async def _apply_update_async(
@@ -466,9 +462,9 @@ class NotionWriteTool(BaseTool):
             try:
                 await self._async_client.pages.update(
                     page_id=payload.update.page_id,
-                    properties=payload.properties,
+                    properties=cast(dict[str, Any], payload.properties),
                 )
-            except (APIResponseError, httpx.HTTPError, Exception) as exc:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
                 _raise_tool_error("Update page properties", exc)
         if blocks:
             params: dict[str, Any] = {
@@ -479,7 +475,7 @@ class NotionWriteTool(BaseTool):
                 params["replace"] = True
             try:
                 await self._async_client.blocks.children.append(**params)
-            except (APIResponseError, httpx.HTTPError, Exception) as exc:  # noqa: BLE001
+            except Exception as exc:  # noqa: BLE001
                 _raise_tool_error("Update page blocks", exc)
 
     def _summarize_update(
@@ -519,10 +515,10 @@ class NotionWriteTool(BaseTool):
             return f"Dry run: would {future_phrase} on page {payload.update.page_id}."
         return f"{past_phrase} on page {payload.update.page_id}."
 
-    def _retrieve_page_url_sync(self, page_id: str) -> str | None:
+    def _retrieve_page_url_sync(self, page_id: str) -> Optional[str]:
         try:
             response = self._client.pages.retrieve(page_id=page_id)
-        except (APIResponseError, httpx.HTTPError, Exception) as exc:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
             _raise_tool_error("Retrieve page", exc)
         if isinstance(response, Mapping):
             url = response.get("url")
@@ -530,10 +526,10 @@ class NotionWriteTool(BaseTool):
                 return url
         return None
 
-    async def _retrieve_page_url_async(self, page_id: str) -> str | None:
+    async def _retrieve_page_url_async(self, page_id: str) -> Optional[str]:
         try:
             response = await self._async_client.pages.retrieve(page_id=page_id)
-        except (APIResponseError, httpx.HTTPError, Exception) as exc:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
             _raise_tool_error("Retrieve page", exc)
         if isinstance(response, Mapping):
             url = response.get("url")

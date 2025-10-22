@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from typing import Iterable, Mapping, Sequence
+from typing import Optional
 
 from .client import NotionClientBundle, create_client_bundle
 from .config import NotionClientSettings
@@ -12,7 +13,7 @@ from .tools import NotionSearchTool, NotionWriteTool
 __all__ = ["NotionToolkit", "create_toolkit"]
 
 
-@dataclass(slots=True)
+@dataclass
 class NotionToolkit:
     """Container bundling preconfigured Notion tools."""
 
@@ -28,10 +29,10 @@ class NotionToolkit:
 
 def create_toolkit(
     *,
-    api_token: str | None = None,
-    default_parent_page_id: str | None = None,
-    settings: NotionClientSettings | None = None,
-    env: Mapping[str, str] | None = None,
+    api_token: Optional[str] = None,
+    default_parent_page_id: Optional[str] = None,
+    settings: Optional[NotionClientSettings] = None,
+    env: Optional[Mapping[str, str]] = None,
 ) -> NotionToolkit:
     """Build a NotionToolkit with shared clients for both tools."""
 

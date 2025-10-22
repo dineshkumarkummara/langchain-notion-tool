@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Mapping, MutableMapping
 from copy import deepcopy
-from typing import Any, Iterable, Mapping, MutableMapping
+from typing import Any, cast
 
 from .exceptions import NotionConfigurationError
 
@@ -224,7 +225,7 @@ def sanitize_blocks(
             raise NotionConfigurationError(
                 "Total text length across blocks exceeds the permitted limit."
             )
-        sanitized.append(block_copy)
+        sanitized.append(cast(dict[str, Any], block_copy))
     return sanitized
 
 

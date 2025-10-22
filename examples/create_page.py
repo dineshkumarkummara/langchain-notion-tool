@@ -6,7 +6,6 @@ from __future__ import annotations
 import argparse
 import os
 from pathlib import Path
-from typing import Optional
 
 from langchain_notion_tools import NotionWriteTool, from_text
 
@@ -22,7 +21,7 @@ def _load_dotenv(path: Path) -> None:
             os.environ[key.strip()] = value.strip()
 
 
-def main(argv: Optional[list[str]] = None) -> int:
+def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Create a Notion page from Markdown content")
     parser.add_argument("parent", help="Parent page or database ID")
     parser.add_argument("title", help="Title for the new page")

@@ -6,13 +6,13 @@ from .blocks import (
     ALLOWED_BLOCK_TYPES,
     MAX_BLOCKS,
     MAX_TOTAL_TEXT_LENGTH,
+    bulleted_list_item,
     callout,
     code,
     from_text,
     heading_1,
     heading_2,
     heading_3,
-    bulleted_list_item,
     numbered_list_item,
     paragraph,
     quote,
@@ -34,10 +34,11 @@ from .config import (
 )
 from .exceptions import (
     MissingNotionAPITokenError,
+    NotionAPIToolError,
     NotionConfigurationError,
     NotionIntegrationError,
-    NotionAPIToolError,
 )
+from .toolkit import NotionToolkit, create_toolkit
 from .tools import (
     NotionPageParent,
     NotionSearchInput,
@@ -48,7 +49,6 @@ from .tools import (
     NotionWriteResult,
     NotionWriteTool,
 )
-from .toolkit import NotionToolkit, create_toolkit
 
 __all__ = [
     "__version__",

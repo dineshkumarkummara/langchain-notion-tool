@@ -1,13 +1,14 @@
 from __future__ import annotations
 
-from typing import Any, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 import pytest
+from langchain_core.tools import ToolException
 
 from langchain_notion_tools.config import NotionClientSettings
 from langchain_notion_tools.exceptions import NotionConfigurationError
 from langchain_notion_tools.tools.write import NotionWriteTool
-from langchain_core.tools import ToolExecutionError
 
 
 class DummyPagesAPI:
@@ -243,7 +244,7 @@ def test_create_page_error_wrapped(write_tool: NotionWriteTool, monkeypatch: pyt
         raise RuntimeError("fail create")
 
     monkeypatch.setattr(write_tool._client.pages, "create", boom)
-    with pytest.raises(ToolExecutionError) as excinfo:
+    with pytest.raises(ToolException) as excinfo:
         write_tool._run(title="Err", parent={"page_id": "p"})
     assert "Create page failed" in str(excinfo.value)
 
@@ -253,7 +254,7 @@ def test_update_blocks_error_wrapped(write_tool: NotionWriteTool, monkeypatch: p
         raise RuntimeError("fail blocks")
 
     monkeypatch.setattr(write_tool._client.blocks.children, "append", boom)
-    with pytest.raises(ToolExecutionError) as excinfo:
+    with pytest.raises(ToolException) as excinfo:
         write_tool._run(update={"page_id": "page-x", "mode": "append"}, blocks=[{"object": "block", "type": "paragraph", "paragraph": {"rich_text": []}}])
     assert "Update page blocks failed" in str(excinfo.value)
 
@@ -263,7 +264,7 @@ def test_update_properties_error_wrapped(write_tool: NotionWriteTool, monkeypatc
         raise RuntimeError(f"fail props {page_id}")
 
     monkeypatch.setattr(write_tool._client.pages, "update", boom)
-    with pytest.raises(ToolExecutionError) as excinfo:
+    with pytest.raises(ToolException) as excinfo:
         write_tool._run(update={"page_id": "page-props", "mode": "append"}, properties={"Status": {"select": {"name": "Done"}}})
     assert "Update page properties failed" in str(excinfo.value)
 
@@ -296,7 +297,7 @@ async def test_async_create_error_wrapped(write_tool: NotionWriteTool, monkeypat
         raise RuntimeError("fail create async")
 
     monkeypatch.setattr(write_tool._async_client.pages, "create", boom)
-    with pytest.raises(ToolExecutionError) as excinfo:
+    with pytest.raises(ToolException) as excinfo:
         await write_tool._arun(title="Err", parent={"page_id": "parent"})
     assert "Create page failed" in str(excinfo.value)
 
@@ -307,7 +308,7 @@ async def test_async_update_error_wrapped(write_tool: NotionWriteTool, monkeypat
         raise RuntimeError("fail async append")
 
     monkeypatch.setattr(write_tool._async_client.blocks.children, "append", boom)
-    with pytest.raises(ToolExecutionError) as excinfo:
+    with pytest.raises(ToolException) as excinfo:
         await write_tool._arun(
             update={"page_id": "page-async", "mode": "append"},
             blocks=[{"object": "block", "type": "paragraph", "paragraph": {"rich_text": []}}],

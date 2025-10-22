@@ -8,7 +8,7 @@ fi
 
 if [ ! -d dist ] || [ -z "$(ls -A dist 2>/dev/null)" ]; then
   echo "Building distribution artifacts..."
-  python -m build
+  python3 -m build
 fi
 
 twine upload "$@" dist/*

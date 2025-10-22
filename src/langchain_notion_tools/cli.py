@@ -5,8 +5,9 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Optional
 
 from .blocks import from_text
 from .exceptions import NotionConfigurationError
@@ -36,7 +37,7 @@ def _print_json(data: Any) -> None:
     sys.stdout.write("\n")
 
 
-def notion_search_main(argv: Sequence[str] | None = None) -> int:
+def notion_search_main(argv: Optional[Sequence[str]] = None) -> int:
     """Entry point for the ``notion-search`` command."""
 
     parser = argparse.ArgumentParser(description="Search Notion pages and databases")
@@ -54,19 +55,23 @@ def notion_search_main(argv: Sequence[str] | None = None) -> int:
         parser.error("Provide exactly one of --query, --page-id, or --database-id")
 
     filter_payload = _load_json(args.filter, description="filter") if args.filter else None
+    if filter_payload is not None and not isinstance(filter_payload, dict):
+        parser.error("--filter must be a JSON object")
 
     tool = NotionSearchTool()
-    results = tool.run(
-        query=args.query,
-        page_id=args.page_id,
-        database_id=args.database_id,
-        filter=filter_payload,
+    results = tool.invoke(
+        {
+            "query": args.query,
+            "page_id": args.page_id,
+            "database_id": args.database_id,
+            "filter": filter_payload,
+        }
     )
     _print_json(results)
     return 0
 
 
-def notion_write_main(argv: Sequence[str] | None = None) -> int:
+def notion_write_main(argv: Optional[Sequence[str]] = None) -> int:
     """Entry point for the ``notion-write`` command."""
 
     parser = argparse.ArgumentParser(description="Create or update Notion pages")
@@ -117,6 +122,8 @@ def notion_write_main(argv: Sequence[str] | None = None) -> int:
         update = {"page_id": args.update_page, "mode": args.update_mode}
 
     properties = _load_json(args.properties, description="properties") if args.properties else None
+    if properties is not None and not isinstance(properties, dict):
+        parser.error("--properties must be a JSON object")
 
     blocks = None
     sources = [bool(args.blocks_json), bool(args.blocks_file), bool(args.blocks_from_text)]
@@ -129,15 +136,22 @@ def notion_write_main(argv: Sequence[str] | None = None) -> int:
     elif args.blocks_from_text:
         blocks = from_text(args.blocks_from_text)
 
+    if blocks is not None and not isinstance(blocks, list):
+        parser.error("Blocks payload must be a JSON array")
+    if isinstance(blocks, list) and not all(isinstance(item, dict) for item in blocks):
+        parser.error("Blocks array must contain JSON objects")
+
     tool = NotionWriteTool()
     try:
-        result = tool.run(
-            title=args.title,
-            parent=parent,
-            blocks=blocks,
-            update=update,
-            properties=properties,
-            is_dry_run=args.dry_run,
+        result = tool.invoke(
+            {
+                "title": args.title,
+                "parent": parent,
+                "blocks": blocks,
+                "update": update,
+                "properties": properties,
+                "is_dry_run": args.dry_run,
+            }
         )
     except NotionConfigurationError as exc:  # pragma: no cover - CLI validation path
         parser.error(str(exc))

@@ -1,16 +1,17 @@
 from __future__ import annotations
 
-from typing import Any, Dict, Mapping
+from collections.abc import Mapping
+from typing import Any
 
 import pytest
+from langchain_core.tools import ToolException
 
 from langchain_notion_tools.config import NotionClientSettings
 from langchain_notion_tools.exceptions import NotionConfigurationError
 from langchain_notion_tools.tools import NotionSearchTool
-from langchain_core.tools import ToolExecutionError
 
 
-def _page_result() -> Dict[str, Any]:
+def _page_result() -> dict[str, Any]:
     return {
         "object": "page",
         "id": "page-123",
@@ -33,7 +34,7 @@ def _page_result() -> Dict[str, Any]:
     }
 
 
-def _database_result() -> Dict[str, Any]:
+def _database_result() -> dict[str, Any]:
     return {
         "object": "page",
         "id": "row-1",
@@ -183,7 +184,7 @@ def test_search_sync_error_wrapped(search_tool: NotionSearchTool, monkeypatch: p
         raise RuntimeError("kaboom")
 
     monkeypatch.setattr(search_tool._client, "search", boom)
-    with pytest.raises(ToolExecutionError) as excinfo:
+    with pytest.raises(ToolException) as excinfo:
         search_tool._run(query="oops")
     assert "Search failed" in str(excinfo.value)
 
@@ -194,6 +195,6 @@ async def test_search_async_error_wrapped(search_tool: NotionSearchTool, monkeyp
         raise RuntimeError("kaboom")
 
     monkeypatch.setattr(search_tool._async_client, "search", boom)
-    with pytest.raises(ToolExecutionError) as excinfo:
+    with pytest.raises(ToolException) as excinfo:
         await search_tool._arun(query="oops")
     assert "Search failed" in str(excinfo.value)
