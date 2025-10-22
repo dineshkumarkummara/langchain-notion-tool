@@ -75,11 +75,14 @@ def create_sync_client(
     )
     token = resolved_settings.api_token
     Client, _ = _load_client_classes()
+    client_options = dict(client_kwargs.pop("client_options", {}))
+    client_options.setdefault("timeout", resolved_settings.client_timeout)
+    client_options.setdefault("max_retries", resolved_settings.max_retries)
     logger.debug(
         "Creating Notion sync client",
         extra={"notion_token": redact_token(token)},
     )
-    return Client(auth=token, **client_kwargs)
+    return Client(auth=token, client_options=client_options, **client_kwargs)
 
 
 def create_async_client(
@@ -104,11 +107,14 @@ def create_async_client(
     )
     token = resolved_settings.api_token
     _, AsyncClient = _load_client_classes()
+    client_options = dict(client_kwargs.pop("client_options", {}))
+    client_options.setdefault("timeout", resolved_settings.client_timeout)
+    client_options.setdefault("max_retries", resolved_settings.max_retries)
     logger.debug(
         "Creating Notion async client",
         extra={"notion_token": redact_token(token)},
     )
-    return AsyncClient(auth=token, **client_kwargs)
+    return AsyncClient(auth=token, client_options=client_options, **client_kwargs)
 
 
 def create_client_bundle(

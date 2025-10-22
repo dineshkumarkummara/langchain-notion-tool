@@ -7,6 +7,7 @@ import pytest
 from langchain_notion_tools.config import NotionClientSettings
 from langchain_notion_tools.exceptions import NotionConfigurationError
 from langchain_notion_tools.tools import NotionSearchTool
+from langchain_core.tools import ToolExecutionError
 
 
 def _page_result() -> Dict[str, Any]:
@@ -175,3 +176,24 @@ async def test_async_query(search_tool: NotionSearchTool) -> None:
     results = await search_tool._arun(query="async")
     assert results[0]["title"] == "Sample Page"
     assert search_tool._async_client.search.calls[0] == {"query": "async"}
+
+
+def test_search_sync_error_wrapped(search_tool: NotionSearchTool, monkeypatch: pytest.MonkeyPatch) -> None:
+    def boom(**_: Any) -> None:
+        raise RuntimeError("kaboom")
+
+    monkeypatch.setattr(search_tool._client, "search", boom)
+    with pytest.raises(ToolExecutionError) as excinfo:
+        search_tool._run(query="oops")
+    assert "Search failed" in str(excinfo.value)
+
+
+@pytest.mark.asyncio
+async def test_search_async_error_wrapped(search_tool: NotionSearchTool, monkeypatch: pytest.MonkeyPatch) -> None:
+    async def boom(**_: Any) -> None:
+        raise RuntimeError("kaboom")
+
+    monkeypatch.setattr(search_tool._async_client, "search", boom)
+    with pytest.raises(ToolExecutionError) as excinfo:
+        await search_tool._arun(query="oops")
+    assert "Search failed" in str(excinfo.value)

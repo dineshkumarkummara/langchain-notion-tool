@@ -13,8 +13,9 @@ pre-built `NotionClientSettings` instance. This page summarizes the available op
 
 | Environment variable | Description |
 | --- | --- |
-| `NOTION_DEFAULT_PARENT_PAGE_ID` | Default page or database where new pages should be created when
-no explicit parent is supplied. |
+| `NOTION_DEFAULT_PARENT_PAGE_ID` | Default page or database where new pages should be created when no explicit parent is supplied. |
+| `NOTION_API_TIMEOUT` | Optional override for HTTP timeout (seconds). Defaults to `30`. |
+| `NOTION_API_MAX_RETRIES` | Optional override for retry attempts on transient failures. Defaults to `3`. |
 
 Settings are validated using [Pydantic](https://docs.pydantic.dev) and invalid values trigger
 `NotionConfigurationError` with actionable hints.

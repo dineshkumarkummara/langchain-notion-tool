@@ -32,6 +32,16 @@ class NotionClientSettings(BaseModel):
         default=None,
         description="Optional fallback parent page ID used when creating pages.",
     )
+    client_timeout: float = Field(
+        default=30.0,
+        ge=1.0,
+        description="Timeout (seconds) applied to Notion HTTP requests.",
+    )
+    max_retries: int = Field(
+        default=3,
+        ge=0,
+        description="Maximum retry attempts for transient Notion API errors.",
+    )
 
     @field_validator("api_token")
     @classmethod
@@ -65,7 +75,20 @@ class NotionClientSettings(BaseModel):
                 f" {NOTION_API_TOKEN_ENV_VAR} environment variable."
             )
         default_parent = source.get(NOTION_DEFAULT_PARENT_PAGE_ID_ENV_VAR)
-        return cls(api_token=token, default_parent_page_id=default_parent)
+        try:
+            timeout = float(source.get("NOTION_API_TIMEOUT", "30"))
+        except ValueError as exc:  # pragma: no cover - env validation
+            raise NotionConfigurationError("NOTION_API_TIMEOUT must be numeric.") from exc
+        try:
+            retries = int(source.get("NOTION_API_MAX_RETRIES", "3"))
+        except ValueError as exc:  # pragma: no cover - env validation
+            raise NotionConfigurationError("NOTION_API_MAX_RETRIES must be an integer.") from exc
+        return cls(
+            api_token=token,
+            default_parent_page_id=default_parent,
+            client_timeout=timeout,
+            max_retries=retries,
+        )
 
     @classmethod
     def resolve(

@@ -28,6 +28,8 @@ def test_from_env_success() -> None:
     settings = NotionClientSettings.from_env(env)
     assert settings.api_token == "secret-token"
     assert settings.default_parent_page_id == "parent123"
+    assert settings.client_timeout == 30.0
+    assert settings.max_retries == 3
 
 
 def test_from_env_missing_token_raises() -> None:
@@ -47,16 +49,34 @@ def test_resolve_prefers_explicit_values() -> None:
     )
     assert resolved.api_token == "override-token"
     assert resolved.default_parent_page_id == "override-parent"
+    assert resolved.client_timeout == initial.client_timeout
+    assert resolved.max_retries == initial.max_retries
 
 
 def test_resolve_uses_env_when_settings_missing() -> None:
     env = _make_env(
         NOTION_API_TOKEN_ENV_VAR="env-token",
         NOTION_DEFAULT_PARENT_PAGE_ID_ENV_VAR="env-parent",
+        NOTION_API_TIMEOUT="15",
+        NOTION_API_MAX_RETRIES="5",
     )
     resolved = NotionClientSettings.resolve(env=env)
     assert resolved.api_token == "env-token"
     assert resolved.default_parent_page_id == "env-parent"
+    assert resolved.client_timeout == 15.0
+    assert resolved.max_retries == 5
+
+
+def test_from_env_invalid_timeout_raises() -> None:
+    env = _make_env(NOTION_API_TOKEN_ENV_VAR="token", NOTION_API_TIMEOUT="invalid")
+    with pytest.raises(NotionConfigurationError):
+        NotionClientSettings.from_env(env)
+
+
+def test_from_env_invalid_retry_raises() -> None:
+    env = _make_env(NOTION_API_TOKEN_ENV_VAR="token", NOTION_API_MAX_RETRIES="oops")
+    with pytest.raises(NotionConfigurationError):
+        NotionClientSettings.from_env(env)
 
 
 def test_require_parent_errors_without_value() -> None:

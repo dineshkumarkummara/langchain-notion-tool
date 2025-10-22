@@ -5,13 +5,19 @@ from __future__ import annotations
 import logging
 from typing import Any, Iterable, Mapping
 
+import httpx
 from langchain_core.callbacks import AsyncCallbackManagerForToolRun, CallbackManagerForToolRun
-from langchain_core.tools import BaseTool
+from langchain_core.tools import BaseTool, ToolExecutionError
 from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from ..client import create_async_client, create_sync_client
 from ..config import NotionClientSettings
 from ..exceptions import NotionConfigurationError
+
+try:  # pragma: no cover - notion-client always installed in runtime
+    from notion_client.errors import APIResponseError
+except ImportError:  # pragma: no cover - safety for docs builds
+    APIResponseError = Exception  # type: ignore[misc,assignment]
 
 __all__ = [
     "NotionSearchInput",
@@ -20,6 +26,22 @@ __all__ = [
 ]
 
 logger = logging.getLogger(__name__)
+
+
+def _raise_tool_error(operation: str, error: Exception) -> None:
+    if isinstance(error, ToolExecutionError):  # pragma: no cover - defensive
+        raise
+    if isinstance(error, NotionConfigurationError):  # pragma: no cover - upstream
+        raise
+    message = f"{operation} failed: {error}"
+    if isinstance(error, APIResponseError):
+        status = getattr(error, "status", None)
+        code = getattr(error, "code", None)
+        if code:
+            message += f" (code {code})"
+        if status:
+            message += f" [status {status}]"
+    raise ToolExecutionError(message) from error
 
 
 def _rich_text_to_plain_text(items: Iterable[Mapping[str, Any]]) -> str:
@@ -216,23 +238,32 @@ class NotionSearchTool(BaseTool):
             },
         )
         if payload.page_id:
-            page = client.pages.retrieve(page_id=payload.page_id)
+            try:
+                page = client.pages.retrieve(page_id=payload.page_id)
+            except (APIResponseError, httpx.HTTPError, Exception) as exc:  # noqa: BLE001
+                _raise_tool_error("Retrieve page", exc)
             return [self._normalize_result(page)]
         if payload.database_id:
             params: dict[str, Any] = {}
             if payload.filter is not None:
                 params["filter"] = payload.filter
-            response = client.databases.query(
-                database_id=payload.database_id,
-                **params,
-            )
+            try:
+                response = client.databases.query(
+                    database_id=payload.database_id,
+                    **params,
+                )
+            except (APIResponseError, httpx.HTTPError, Exception) as exc:  # noqa: BLE001
+                _raise_tool_error("Query database", exc)
             items = response.get("results", []) if isinstance(response, Mapping) else []
             return [self._normalize_result(item) for item in items]
 
         params = {"query": payload.query}
         if payload.filter is not None:
             params["filter"] = payload.filter
-        response = client.search(**params)
+        try:
+            response = client.search(**params)
+        except (APIResponseError, httpx.HTTPError, Exception) as exc:  # noqa: BLE001
+            _raise_tool_error("Search", exc)
         items = response.get("results", []) if isinstance(response, Mapping) else []
         return [self._normalize_result(item) for item in items]
 
@@ -248,24 +279,33 @@ class NotionSearchTool(BaseTool):
             },
         )
         if payload.page_id:
-            page = await client.pages.retrieve(page_id=payload.page_id)
+            try:
+                page = await client.pages.retrieve(page_id=payload.page_id)
+            except (APIResponseError, httpx.HTTPError, Exception) as exc:  # noqa: BLE001
+                _raise_tool_error("Retrieve page", exc)
             return [self._normalize_result(page)]
         if payload.database_id:
             params: dict[str, Any] = {}
             if payload.filter is not None:
                 params["filter"] = payload.filter
-            response = await client.databases.query(
-                database_id=payload.database_id,
-                **params,
-            )
+            try:
+                response = await client.databases.query(
+                    database_id=payload.database_id,
+                    **params,
+                )
+            except (APIResponseError, httpx.HTTPError, Exception) as exc:  # noqa: BLE001
+                _raise_tool_error("Query database", exc)
             items = response.get("results", []) if isinstance(response, Mapping) else []
             return [self._normalize_result(item) for item in items]
 
         params = {"query": payload.query}
         if payload.filter is not None:
             params["filter"] = payload.filter
-        response = await client.search(**params)
-            items = response.get("results", []) if isinstance(response, Mapping) else []
+        try:
+            response = await client.search(**params)
+        except (APIResponseError, httpx.HTTPError, Exception) as exc:  # noqa: BLE001
+            _raise_tool_error("Search", exc)
+        items = response.get("results", []) if isinstance(response, Mapping) else []
         return [self._normalize_result(item) for item in items]
 
     def _normalize_result(self, item: Mapping[str, Any]) -> NotionSearchResult:

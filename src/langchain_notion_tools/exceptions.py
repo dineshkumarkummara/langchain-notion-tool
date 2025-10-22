@@ -19,3 +19,13 @@ class NotionConfigurationError(NotionIntegrationError):
 
 class MissingNotionAPITokenError(NotionConfigurationError):
     """Raised when the Notion API token is required but missing."""
+
+
+class NotionAPIToolError(NotionIntegrationError):
+    """Raised when the Notion API returns an error that should surface in tool output."""
+
+    def __init__(self, message: str, *, status: int | None = None, code: str | None = None) -> None:
+        super().__init__(message)
+        self.status = status
+        self.code = code
+

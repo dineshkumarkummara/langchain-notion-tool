@@ -7,6 +7,7 @@ import pytest
 from langchain_notion_tools.config import NotionClientSettings
 from langchain_notion_tools.exceptions import NotionConfigurationError
 from langchain_notion_tools.tools.write import NotionWriteTool
+from langchain_core.tools import ToolExecutionError
 
 
 class DummyPagesAPI:
@@ -95,7 +96,10 @@ def test_create_page_under_parent_page(write_tool: NotionWriteTool) -> None:
     result = write_tool._run(title="Test Page", parent=parent, blocks=blocks)
     assert result["action"] == "created"
     assert result["page_id"] == "page-created"
-    assert "Created page under page parent-1" in result["summary"]
+    assert (
+        result["summary"]
+        == "Created page under page parent-1 with title 'Test Page' (1 block(s); properties: title)."
+    )
     payload = write_tool._client.pages.create_calls[0]
     assert payload["parent"] == {"type": "page_id", "page_id": "parent-1"}
     assert payload["properties"]["title"]["title"][0]["text"]["content"] == "Test Page"
@@ -119,7 +123,10 @@ def test_dry_run_returns_summary(write_tool: NotionWriteTool) -> None:
         is_dry_run=True,
     )
     assert result["action"] == "dry_run"
-    assert "Dry run" in result["summary"]
+    assert (
+        result["summary"]
+        == "Dry run: would create page under page parent-1 with title 'Plan' (0 block(s); properties: title)."
+    )
     assert write_tool._client.pages.create_calls == []
 
 
@@ -160,7 +167,7 @@ def test_update_properties_only(write_tool: NotionWriteTool) -> None:
         properties={"Status": {"select": {"name": "Done"}}},
     )
     assert result["action"] == "updated"
-    assert result["summary"] == "Updated properties on page page-props."
+    assert result["summary"] == "Updated properties (Status) on page page-props."
     assert result["url"] == "https://notion.so/page-props"
     update_call = write_tool._client.pages.update_calls[0]
     assert update_call["page_id"] == "page-props"
@@ -174,7 +181,7 @@ def test_append_blocks_and_properties_summary(write_tool: NotionWriteTool) -> No
         blocks=[{"object": "block", "type": "paragraph", "paragraph": {"rich_text": [{"type": "text", "text": {"content": "Body"}}]}}],
         properties={"Status": {"select": {"name": "In Progress"}}},
     )
-    assert result["summary"] == "Appended 1 block(s) and updated properties on page page-both."
+    assert result["summary"] == "Appended 1 block(s) and updated properties (Status) on page page-both."
     assert result["url"] == "https://notion.so/page-both"
     assert write_tool._client.pages.retrieve_calls[-1] == "page-both"
 
@@ -209,7 +216,7 @@ def test_update_properties_dry_run(write_tool: NotionWriteTool) -> None:
         is_dry_run=True,
     )
     assert result["action"] == "dry_run"
-    assert result["summary"] == "Dry run: would update properties on page page-props-dry."
+    assert result["summary"] == "Dry run: would update properties (Status) on page page-props-dry."
 
 
 def test_block_limit_enforced(write_tool: NotionWriteTool) -> None:
@@ -229,6 +236,36 @@ def test_update_dry_run_summary(write_tool: NotionWriteTool) -> None:
     )
     assert result["action"] == "dry_run"
     assert result["summary"] == "Dry run: would append 1 block(s) on page page-dry."
+
+
+def test_create_page_error_wrapped(write_tool: NotionWriteTool, monkeypatch: pytest.MonkeyPatch) -> None:
+    def boom(**_: Any) -> None:
+        raise RuntimeError("fail create")
+
+    monkeypatch.setattr(write_tool._client.pages, "create", boom)
+    with pytest.raises(ToolExecutionError) as excinfo:
+        write_tool._run(title="Err", parent={"page_id": "p"})
+    assert "Create page failed" in str(excinfo.value)
+
+
+def test_update_blocks_error_wrapped(write_tool: NotionWriteTool, monkeypatch: pytest.MonkeyPatch) -> None:
+    def boom(**_: Any) -> None:
+        raise RuntimeError("fail blocks")
+
+    monkeypatch.setattr(write_tool._client.blocks.children, "append", boom)
+    with pytest.raises(ToolExecutionError) as excinfo:
+        write_tool._run(update={"page_id": "page-x", "mode": "append"}, blocks=[{"object": "block", "type": "paragraph", "paragraph": {"rich_text": []}}])
+    assert "Update page blocks failed" in str(excinfo.value)
+
+
+def test_update_properties_error_wrapped(write_tool: NotionWriteTool, monkeypatch: pytest.MonkeyPatch) -> None:
+    def boom(*, page_id: str, properties: Mapping[str, Any]) -> None:  # type: ignore[override]
+        raise RuntimeError(f"fail props {page_id}")
+
+    monkeypatch.setattr(write_tool._client.pages, "update", boom)
+    with pytest.raises(ToolExecutionError) as excinfo:
+        write_tool._run(update={"page_id": "page-props", "mode": "append"}, properties={"Status": {"select": {"name": "Done"}}})
+    assert "Update page properties failed" in str(excinfo.value)
 
 
 @pytest.mark.asyncio
@@ -251,3 +288,28 @@ async def test_async_append(write_tool: NotionWriteTool) -> None:
     append_calls = write_tool._async_client.blocks.children.append_calls
     assert append_calls[0]["block_id"] == "page-async"
     assert write_tool._async_client.pages.retrieve_calls[-1] == "page-async"
+
+
+@pytest.mark.asyncio
+async def test_async_create_error_wrapped(write_tool: NotionWriteTool, monkeypatch: pytest.MonkeyPatch) -> None:
+    async def boom(**_: Any) -> None:
+        raise RuntimeError("fail create async")
+
+    monkeypatch.setattr(write_tool._async_client.pages, "create", boom)
+    with pytest.raises(ToolExecutionError) as excinfo:
+        await write_tool._arun(title="Err", parent={"page_id": "parent"})
+    assert "Create page failed" in str(excinfo.value)
+
+
+@pytest.mark.asyncio
+async def test_async_update_error_wrapped(write_tool: NotionWriteTool, monkeypatch: pytest.MonkeyPatch) -> None:
+    async def boom(**_: Any) -> None:
+        raise RuntimeError("fail async append")
+
+    monkeypatch.setattr(write_tool._async_client.blocks.children, "append", boom)
+    with pytest.raises(ToolExecutionError) as excinfo:
+        await write_tool._arun(
+            update={"page_id": "page-async", "mode": "append"},
+            blocks=[{"object": "block", "type": "paragraph", "paragraph": {"rich_text": []}}],
+        )
+    assert "Update page blocks failed" in str(excinfo.value)

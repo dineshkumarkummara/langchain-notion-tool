@@ -42,11 +42,24 @@ def test_create_sync_client_returns_existing_instance() -> None:
 
 
 def test_create_sync_client_constructs_new_instance() -> None:
-    settings = NotionClientSettings(api_token="token")
-    client = create_sync_client(settings=settings, timeout=5)
+    settings = NotionClientSettings(api_token="token", client_timeout=42.0, max_retries=7)
+    client = create_sync_client(settings=settings)
     assert isinstance(client, DummySyncClient)
     assert client.auth == "token"
-    assert client.kwargs["timeout"] == 5
+    assert client.kwargs["client_options"]["timeout"] == 42.0
+    assert client.kwargs["client_options"]["max_retries"] == 7
+
+
+def test_create_sync_client_respects_custom_client_options() -> None:
+    settings = NotionClientSettings(api_token="token")
+    client = create_sync_client(
+        settings=settings,
+        client_options={"timeout": 5, "headers": {"X-Test": "1"}},
+    )
+    options = client.kwargs["client_options"]
+    assert options["timeout"] == 5
+    assert options["headers"] == {"X-Test": "1"}
+    assert options["max_retries"] == settings.max_retries
 
 
 def test_create_sync_client_uses_env(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -57,11 +70,24 @@ def test_create_sync_client_uses_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_create_async_client_constructs_new_instance() -> None:
-    settings = NotionClientSettings(api_token="token")
-    client = create_async_client(settings=settings, timeout=10)
+    settings = NotionClientSettings(api_token="token", client_timeout=12.0, max_retries=2)
+    client = create_async_client(settings=settings)
     assert isinstance(client, DummyAsyncClient)
     assert client.auth == "token"
-    assert client.kwargs["timeout"] == 10
+    options = client.kwargs["client_options"]
+    assert options["timeout"] == 12.0
+    assert options["max_retries"] == 2
+
+
+def test_create_async_client_respects_custom_options() -> None:
+    settings = NotionClientSettings(api_token="token")
+    client = create_async_client(
+        settings=settings,
+        client_options={"timeout": 9, "max_retries": 1},
+    )
+    options = client.kwargs["client_options"]
+    assert options["timeout"] == 9
+    assert options["max_retries"] == 1
 
 
 def test_create_client_bundle_reuses_provided_instances() -> None:
@@ -79,10 +105,12 @@ def test_create_client_bundle_reuses_provided_instances() -> None:
 def test_create_client_bundle_builds_clients_with_kwargs() -> None:
     bundle = create_client_bundle(
         api_token="token",
-        client_kwargs={"timeout": 1},
-        async_client_kwargs={"timeout": 2},
+        client_kwargs={"client_options": {"timeout": 1, "max_retries": 2}},
+        async_client_kwargs={"client_options": {"timeout": 3, "max_retries": 4}},
     )
     assert isinstance(bundle.client, DummySyncClient)
     assert isinstance(bundle.async_client, DummyAsyncClient)
-    assert bundle.client.kwargs["timeout"] == 1
-    assert bundle.async_client.kwargs["timeout"] == 2
+    assert bundle.client.kwargs["client_options"]["timeout"] == 1
+    assert bundle.client.kwargs["client_options"]["max_retries"] == 2
+    assert bundle.async_client.kwargs["client_options"]["timeout"] == 3
+    assert bundle.async_client.kwargs["client_options"]["max_retries"] == 4

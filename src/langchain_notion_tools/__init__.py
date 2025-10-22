@@ -36,6 +36,7 @@ from .exceptions import (
     MissingNotionAPITokenError,
     NotionConfigurationError,
     NotionIntegrationError,
+    NotionAPIToolError,
 )
 from .tools import (
     NotionPageParent,
@@ -54,6 +55,7 @@ __all__ = [
     "NotionClientSettings",
     "NotionConfigurationError",
     "NotionIntegrationError",
+    "NotionAPIToolError",
     "MissingNotionAPITokenError",
     "NOTION_API_TOKEN_ENV_VAR",
     "NOTION_DEFAULT_PARENT_PAGE_ID_ENV_VAR",
