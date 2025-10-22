@@ -152,7 +152,6 @@ class NotionSearchTool(BaseTool):
     ) -> None:
         kwargs.setdefault("args_schema", NotionSearchInput)
         super().__init__(**kwargs)
-        self.args_schema = NotionSearchInput
         self._settings = NotionClientSettings.resolve(
             api_token=api_token,
             default_parent_page_id=default_parent_page_id,

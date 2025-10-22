@@ -167,7 +167,6 @@ class NotionWriteTool(BaseTool):
     ) -> None:
         kwargs.setdefault("args_schema", NotionWriteInput)
         super().__init__(**kwargs)
-        self.args_schema = NotionWriteInput
         self._settings = NotionClientSettings.resolve(
             api_token=api_token,
             default_parent_page_id=default_parent_page_id,
