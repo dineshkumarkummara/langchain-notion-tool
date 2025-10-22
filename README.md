@@ -1,12 +1,15 @@
 # LangChain Notion Tools
 
-[![CI](https://github.com/dineshkumarkummara/langchain-notion-tool/actions/workflows/ci.yml/badge.svg)](https://github.com/dineshkumarkummara/langchain-notion-tool/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/langchain-notion-tools.svg)](https://pypi.org/project/langchain-notion-tools/)
+[![Build](https://github.com/dineshkumarkummara/langchain-notion-tool/actions/workflows/ci.yml/badge.svg)](https://github.com/dineshkumarkummara/langchain-notion-tool/actions/workflows/ci.yml)
 [![Coverage](https://img.shields.io/badge/coverage-90%25-brightgreen.svg)](#tests)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Docs](https://img.shields.io/badge/docs-mkdocs--material-2962ff.svg)](docs/index.md)
 
 LangChain Notion Tools is an external integration package that gives LangChain agents **read and
-write** access to Notion via the official Notion API. It ships a polished developer experience:
+write** access to Notion via the official Notion API. Built for the
+[LangChain documentation ecosystem](https://python.langchain.com/docs/), it ships a polished
+developer experience:
 
 - 🔍 `NotionSearchTool` for locating pages and databases with LLM-friendly output.
 - ✍️ `NotionWriteTool` for creating and updating pages with rich blocks, property updates, and

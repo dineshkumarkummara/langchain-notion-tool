@@ -2,74 +2,86 @@ name: CI
 
 on:
   push:
-    branches:
-      - main
-      - feature/notion-write-toolkit
+    branches: ["main"]
   pull_request:
+    branches: ["main"]
+
+permissions:
+  contents: read
 
 jobs:
-  lint:
-    name: Ruff Lint
+  lint-test:
+    name: Lint, Type Check, Test (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - name: Cache pip
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: pip-lint-${{ runner.os }}-${{ hashFiles('pyproject.toml', 'ruff.toml') }}
-          restore-keys: |
-            pip-lint-${{ runner.os }}-
-      - name: Install dependencies
-        run: pip install .[dev]
-      - name: Run Ruff
-        run: ruff check .
-
-  type-check:
-    name: Mypy
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - name: Cache pip
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: pip-mypy-${{ runner.os }}-${{ hashFiles('pyproject.toml', 'mypy.ini') }}
-          restore-keys: |
-            pip-mypy-${{ runner.os }}-
-      - name: Install dependencies
-        run: pip install .[dev]
-      - name: Run mypy
-        run: mypy src
-
-  test:
-    name: Pytest
-    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         python-version: ["3.9", "3.10", "3.11", "3.12"]
-        os: [ubuntu-latest, macos-latest]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
-      - name: Cache pip
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: pip-test-${{ runner.os }}-${{ matrix.python-version }}-${{ hashFiles('pyproject.toml') }}
-          restore-keys: |
-            pip-test-${{ runner.os }}-${{ matrix.python-version }}-
-            pip-test-${{ runner.os }}-
+          cache: pip
+
       - name: Install dependencies
-        run: pip install .[dev]
-      - name: Run tests
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .[dev]
+
+      - name: Run ruff
+        run: ruff check .
+
+      - name: Run mypy
+        run: mypy --config-file mypy.ini
+
+      - name: Run pytest
+        run: pytest --cov=langchain_notion_tools --cov-report=term-missing
+
+  test-macos:
+    name: Test (macOS latest)
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .[dev]
+
+      - name: Run pytest
         run: pytest
+
+  build:
+    name: Build distribution
+    runs-on: ubuntu-latest
+    needs:
+      - lint-test
+      - test-macos
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install build tooling
+        run: |
+          python -m pip install --upgrade pip
+          pip install build
+
+      - name: Build package
+        run: python -m build

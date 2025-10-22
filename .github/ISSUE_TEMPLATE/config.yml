@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Questions & support
+    url: https://github.com/dineshkumarkummara/langchain-notion-tool/discussions
+    about: Use GitHub Discussions for Q&A and general support.
