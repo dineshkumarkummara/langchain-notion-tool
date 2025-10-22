@@ -9,6 +9,7 @@ from langchain_core.callbacks import AsyncCallbackManagerForToolRun, CallbackMan
 from langchain_core.tools import BaseTool
 from pydantic import BaseModel, Field, ValidationError, model_validator
 
+from ..blocks import sanitize_blocks
 from ..client import create_async_client, create_sync_client
 from ..config import NotionClientSettings
 from ..exceptions import NotionConfigurationError
@@ -102,7 +103,8 @@ class NotionWriteInput(BaseModel):
         if self.update is not None and self.parent is not None:
             raise ValueError("Provide either parent for create or update instructions, not both.")
         if self.update is not None:
-            # Update support is added in a subsequent iteration.
+            if self.blocks is None and self.properties is None:
+                raise ValueError("Provide blocks and/or properties when using update instructions.")
             return self
         if self.parent is not None and self.parent.database_id and self.properties is None:
             raise ValueError("properties must be provided when parent is a database.")
@@ -230,51 +232,61 @@ class NotionWriteTool(BaseTool):
 
     def _execute_sync(self, payload: NotionWriteInput) -> NotionWriteResult:
         if payload.update is not None:
-            raise NotionConfigurationError(
-                "Update operations are not supported yet; provide only parent for create operations."
-            )
+            return self._handle_update_sync(payload)
+        sanitized_blocks = self._sanitize_blocks(payload.blocks)
         logger.debug(
             "Creating Notion page (sync)",
             extra={
                 "parent": payload.parent.describe() if payload.parent else None,
                 "title": payload.title,
-                "blocks_count": len(payload.blocks or []),
+                "blocks_count": len(sanitized_blocks),
                 "dry_run": payload.is_dry_run,
             },
         )
-        create_payload = self._build_create_payload(payload)
+        create_payload = self._build_create_payload(payload, sanitized_blocks)
         if payload.is_dry_run:
-            summary = self._summarize_create(payload, create_payload)
+            summary = self._summarize_create(payload, sanitized_blocks, dry_run=True)
             return NotionWriteResult(action="dry_run", page_id=None, url=None, summary=summary)
 
         response = self._client.pages.create(**create_payload)
-        summary = self._summarize_create(payload, create_payload)
+        summary = self._summarize_create(payload, sanitized_blocks, dry_run=False)
         return self._build_result(action="created", response=response, summary=summary)
 
     async def _execute_async(self, payload: NotionWriteInput) -> NotionWriteResult:
         if payload.update is not None:
-            raise NotionConfigurationError(
-                "Update operations are not supported yet; provide only parent for create operations."
-            )
+            return await self._handle_update_async(payload)
+        sanitized_blocks = self._sanitize_blocks(payload.blocks)
         logger.debug(
             "Creating Notion page (async)",
             extra={
                 "parent": payload.parent.describe() if payload.parent else None,
                 "title": payload.title,
-                "blocks_count": len(payload.blocks or []),
+                "blocks_count": len(sanitized_blocks),
                 "dry_run": payload.is_dry_run,
             },
         )
-        create_payload = self._build_create_payload(payload)
+        create_payload = self._build_create_payload(payload, sanitized_blocks)
         if payload.is_dry_run:
-            summary = self._summarize_create(payload, create_payload)
+            summary = self._summarize_create(payload, sanitized_blocks, dry_run=True)
             return NotionWriteResult(action="dry_run", page_id=None, url=None, summary=summary)
 
         response = await self._async_client.pages.create(**create_payload)
-        summary = self._summarize_create(payload, create_payload)
+        summary = self._summarize_create(payload, sanitized_blocks, dry_run=False)
         return self._build_result(action="created", response=response, summary=summary)
 
-    def _build_create_payload(self, payload: NotionWriteInput) -> Mapping[str, Any]:
+    def _sanitize_blocks(
+        self,
+        blocks: list[Mapping[str, Any]] | None,
+    ) -> list[dict[str, Any]]:
+        if not blocks:
+            return []
+        return sanitize_blocks(blocks)
+
+    def _build_create_payload(
+        self,
+        payload: NotionWriteInput,
+        blocks: list[dict[str, Any]],
+    ) -> Mapping[str, Any]:
         if payload.parent is None:
             raise NotionConfigurationError("Parent must be provided for create operations.")
 
@@ -282,32 +294,163 @@ class NotionWriteTool(BaseTool):
         if payload.title and payload.parent.page_id:
             properties.setdefault(
                 "title",
-                [
-                    {
-                        "type": "text",
-                        "text": {"content": payload.title},
-                    }
-                ],
+                {
+                    "title": [
+                        {
+                            "type": "text",
+                            "text": {"content": payload.title},
+                        }
+                    ]
+                },
             )
         api_payload: dict[str, Any] = {
             "parent": payload.parent.to_api_payload(),
             "properties": properties,
         }
-        if payload.blocks:
-            api_payload["children"] = list(payload.blocks)
+        if blocks:
+            api_payload["children"] = blocks
         return api_payload
 
     def _summarize_create(
         self,
         payload: NotionWriteInput,
-        create_payload: Mapping[str, Any],
+        blocks: list[dict[str, Any]],
+        *,
+        dry_run: bool,
     ) -> str:
         parent_desc = payload.parent.describe() if payload.parent else "parent not set"
-        blocks_count = len(payload.blocks or [])
+        blocks_count = len(blocks)
+        action_phrase = "would create" if dry_run else "Created"
+        prefix = "Dry run: " if dry_run else ""
+        title = payload.title or "untitled"
         return (
-            f"Dry run: would create page under {parent_desc} with title '{payload.title or 'untitled'}'"
+            f"{prefix}{action_phrase} page under {parent_desc} with title '{title}'"
             f" and {blocks_count} block(s)."
         )
+
+    def _handle_update_sync(self, payload: NotionWriteInput) -> NotionWriteResult:
+        assert payload.update is not None
+        sanitized_blocks = self._sanitize_blocks(payload.blocks)
+        summary = self._summarize_update(payload, sanitized_blocks, dry_run=payload.is_dry_run)
+        if payload.is_dry_run:
+            return NotionWriteResult(
+                action="dry_run",
+                page_id=payload.update.page_id,
+                url=None,
+                summary=summary,
+            )
+        self._apply_update_sync(payload, sanitized_blocks)
+        url = self._retrieve_page_url_sync(payload.update.page_id)
+        return NotionWriteResult(
+            action="updated",
+            page_id=payload.update.page_id,
+            url=url,
+            summary=summary,
+        )
+
+    async def _handle_update_async(self, payload: NotionWriteInput) -> NotionWriteResult:
+        assert payload.update is not None
+        sanitized_blocks = self._sanitize_blocks(payload.blocks)
+        summary = self._summarize_update(payload, sanitized_blocks, dry_run=payload.is_dry_run)
+        if payload.is_dry_run:
+            return NotionWriteResult(
+                action="dry_run",
+                page_id=payload.update.page_id,
+                url=None,
+                summary=summary,
+            )
+        await self._apply_update_async(payload, sanitized_blocks)
+        url = await self._retrieve_page_url_async(payload.update.page_id)
+        return NotionWriteResult(
+            action="updated",
+            page_id=payload.update.page_id,
+            url=url,
+            summary=summary,
+        )
+
+    def _apply_update_sync(
+        self,
+        payload: NotionWriteInput,
+        blocks: list[dict[str, Any]],
+    ) -> None:
+        assert payload.update is not None
+        if payload.properties:
+            self._client.pages.update(
+                page_id=payload.update.page_id,
+                properties=payload.properties,
+            )
+        if blocks:
+            params: dict[str, Any] = {
+                "block_id": payload.update.page_id,
+                "children": blocks,
+            }
+            if payload.update.mode == "replace":
+                params["replace"] = True
+            self._client.blocks.children.append(**params)
+
+    async def _apply_update_async(
+        self,
+        payload: NotionWriteInput,
+        blocks: list[dict[str, Any]],
+    ) -> None:
+        assert payload.update is not None
+        if payload.properties:
+            await self._async_client.pages.update(
+                page_id=payload.update.page_id,
+                properties=payload.properties,
+            )
+        if blocks:
+            params: dict[str, Any] = {
+                "block_id": payload.update.page_id,
+                "children": blocks,
+            }
+            if payload.update.mode == "replace":
+                params["replace"] = True
+            await self._async_client.blocks.children.append(**params)
+
+    def _summarize_update(
+        self,
+        payload: NotionWriteInput,
+        blocks: list[dict[str, Any]],
+        *,
+        dry_run: bool,
+    ) -> str:
+        assert payload.update is not None
+        block_count = len(blocks)
+        mode = payload.update.mode
+        if block_count:
+            if mode == "replace":
+                future_phrase = f"replace content with {block_count} block(s)"
+                past_phrase = f"Replaced content with {block_count} block(s)"
+            else:
+                future_phrase = f"append {block_count} block(s)"
+                past_phrase = f"Appended {block_count} block(s)"
+            if payload.properties:
+                future_phrase += " and update properties"
+                past_phrase += " and updated properties"
+        else:
+            future_phrase = "update properties"
+            past_phrase = "Updated properties"
+
+        if dry_run:
+            return f"Dry run: would {future_phrase} on page {payload.update.page_id}."
+        return f"{past_phrase} on page {payload.update.page_id}."
+
+    def _retrieve_page_url_sync(self, page_id: str) -> str | None:
+        response = self._client.pages.retrieve(page_id=page_id)
+        if isinstance(response, Mapping):
+            url = response.get("url")
+            if isinstance(url, str):
+                return url
+        return None
+
+    async def _retrieve_page_url_async(self, page_id: str) -> str | None:
+        response = await self._async_client.pages.retrieve(page_id=page_id)
+        if isinstance(response, Mapping):
+            url = response.get("url")
+            if isinstance(url, str):
+                return url
+        return None
 
     def _build_result(
         self,

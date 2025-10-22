@@ -43,6 +43,7 @@ dev = [
   "build",
   "twine",
   "python-semantic-release",
+  "hypothesis",
 ]
 
 [project.urls]
