@@ -1,5 +1,7 @@
 # Examples
 
+End-to-end LangChain agent flow examples that you can run locally.
+
 The snippets below run as doctests. They use in-memory stand-ins for the Notion SDK so you can
 experiment without calling the live API. Swap the stub classes for real `notion-client` instances
 when integrating into your project.

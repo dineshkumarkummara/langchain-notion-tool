@@ -19,6 +19,7 @@ dist/
 htmlcov/
 .pytest_cache/
 .hypothesis/
+site/
 
 # IDEs and editors
 .vscode/

@@ -46,6 +46,7 @@ dev = [
   "hypothesis",
   "mkdocs",
   "mkdocs-material",
+  "mkdocstrings[python]",
 ]
 
 [project.urls]

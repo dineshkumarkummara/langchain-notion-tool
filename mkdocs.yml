@@ -1,6 +1,6 @@
 site_name: LangChain Notion Tools
 site_description: LangChain toolset for reading and writing Notion content.
-site_url: https://example.com/langchain-notion-tools
+site_url: https://dineshkumarkummara.github.io/langchain-notion-tool/
 repo_url: https://github.com/dineshkumarkummara/langchain-notion-tool
 repo_name: dineshkumarkummara/langchain-notion-tool
 theme:
@@ -23,8 +23,20 @@ markdown_extensions:
 nav:
   - Overview: index.md
   - Quickstart: quickstart.md
-  - Configuration: configuration.md
   - Examples: examples.md
+  - API Reference: api_reference.md
+  - Contributing: contributing.md
+  - Configuration: configuration.md
   - LLM JSON Schema: json-schema.md
 plugins:
   - search
+  - mkdocstrings:
+      handlers:
+        python:
+          options:
+            docstring_style: google
+            filters: ["!^__"]
+            heading_level: 2
+            merge_init_into_class: true
+            show_if_no_docstring: false
+            show_source: false

@@ -28,7 +28,34 @@ export NOTION_DEFAULT_PARENT_PAGE_ID="abcd1234efgh5678ijkl9012"
 
 Tokens are redacted in logs and are never written to disk.
 
-## 3. Use the tools in LangChain
+## 3. Create your first Notion page
+
+```python
+from langchain_notion_tools import NotionWriteTool
+
+write = NotionWriteTool()
+page = write.run(
+    title="LLM Release Planning",
+    parent={"page_id": "abcd1234efgh5678ijkl9012"},
+    blocks=[
+        {
+            "object": "block",
+            "type": "paragraph",
+            "paragraph": {
+                "rich_text": [
+                    {"type": "text", "text": {"content": "Kick-off the upcoming launch plan."}}
+                ]
+            },
+        }
+    ],
+)
+print(page["summary"])
+```
+
+The helper returns a JSON response summarising the write operation so you can log
+or confirm the result inside your agent.
+
+## 4. Use the tools in LangChain
 
 ```python
 from langchain_core.runnables import RunnableParallel
@@ -37,21 +64,23 @@ from langchain_notion_tools import NotionSearchTool, NotionWriteTool
 search = NotionSearchTool()
 write = NotionWriteTool()
 
-workflow = RunnableParallel({
-    "prior_art": search.bind(query="product roadmap"),
-    "create": write.bind(
-        parent={"page_id": "abcd1234efgh5678ijkl9012"},
-        title="LLM roadmap review",
-        blocks=[
-            {
-                "object": "block",
-                "type": "paragraph",
-                "paragraph": {"rich_text": [{"type": "text", "text": {"content": "Draft body"}}]},
-            }
-        ],
-        is_dry_run=True,
-    ),
-})
+workflow = RunnableParallel(
+    {
+        "prior_art": search.bind(query="product roadmap"),
+        "create": write.bind(
+            parent={"page_id": "abcd1234efgh5678ijkl9012"},
+            title="LLM roadmap review",
+            blocks=[
+                {
+                    "object": "block",
+                    "type": "paragraph",
+                    "paragraph": {"rich_text": [{"type": "text", "text": {"content": "Draft body"}}]},
+                }
+            ],
+            is_dry_run=True,
+        ),
+    }
+)
 result = workflow.invoke({})
 print(result["create"]["summary"])
 ```
@@ -59,7 +88,7 @@ print(result["create"]["summary"])
 The tools are standard LangChain runnables. Bind arguments for reuse or call them directly inside
 custom agents.
 
-## 4. Use the toolkit
+## 5. Use the toolkit
 
 Prefer a bundled setup? The `NotionToolkit` factory wires both tools to the same underlying
 Notion clients, enabling shared retry policy and reduced connection overhead:
@@ -71,7 +100,7 @@ notion = create_toolkit()
 agent = RunnableParallel({"search": notion.search, "write": notion.write})
 ```
 
-## 5. Debug with the CLI
+## 6. Debug with the CLI
 
 Two helper commands are installed automatically:
 
