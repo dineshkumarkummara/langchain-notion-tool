@@ -5,6 +5,7 @@
 [![Coverage](https://img.shields.io/badge/coverage-90%25-brightgreen.svg)](#tests)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Docs](https://img.shields.io/badge/docs-latest-2962ff.svg)](https://dineshkumarkummara.github.io/langchain-notion-tool/)
+[![LangChain Docs](https://img.shields.io/badge/langchain-integration-1f2933.svg)](https://github.com/langchain-ai/langchain/pull/33645)
 
 LangChain Notion Tools is an external integration package that gives LangChain agents **read and
 write** access to Notion via the official Notion API. Built for the
@@ -117,6 +118,10 @@ notion-write --title "Weekly Review" --blocks-from-text "# Intro" --dry-run
 
 The CLI respects the same environment variables as the Python API and prints JSON responses that
 can be piped into `jq` for terminal-friendly inspection.
+
+---
+
+> ⚠️ **Usage notice:** Ensure your Notion integration token has write access to the page or database you target (`pages:read`, `pages:write`, `databases:read`, `databases:write`) before running the tools.
 
 ---
 
