@@ -5,7 +5,7 @@
 [![Coverage](https://img.shields.io/badge/coverage-90%25-brightgreen.svg)](#tests)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Docs](https://img.shields.io/badge/docs-latest-2962ff.svg)](https://dineshkumarkummara.github.io/langchain-notion-tool/)
-[![LangChain Docs](https://img.shields.io/badge/langchain-integration-1f2933.svg)](https://github.com/langchain-ai/langchain/pull/33645)
+[![Featured in LangChain Docs](https://img.shields.io/badge/featured%20in-LangChain%20Docs-1f2933.svg)](https://github.com/langchain-ai/langchain/pull/33645)
 
 LangChain Notion Tools is an external integration package that gives LangChain agents **read and
 write** access to Notion via the official Notion API. Built for the
@@ -154,6 +154,17 @@ full guide.
 
 ---
 
+## Community
+
+- [LangChain Discord](https://discord.gg/langchain) — ask questions, share demos, and get help from the LangChain community.
+- [Notion Developer Forum](https://www.notion.so/developers) — connect with other builders extending the Notion API.
+
+---
+
 ## License
 
 This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
+
+---
+
+Built with ❤️ by Dinesh Kumar Kummara.
